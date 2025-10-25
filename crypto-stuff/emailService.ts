@@ -2,7 +2,7 @@ import Mailgun from 'mailgun.js';
 import FormData from 'form-data';
 
 // HARDCODED Mailgun configuration
-const MAILGUN_API_KEY = '0dda55eb93b5db8fe1aeb97ab2faee39-ba8a60cd-8dc65709';
+const MAILGUN_API_KEY = 'e3ad96a6c4a661efd1accdd5e62a7801-ba8a60cd-e09445c0';
 const MAILGUN_DOMAIN = 'sandbox1ae38be4c9284d629e03f2454a25619c.mailgun.org';
 const FROM_EMAIL = 'monkeyman20204@gmail.com';
 
