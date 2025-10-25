@@ -139,6 +139,13 @@ AMOUNT_DISPLAY_POSITION = "top_right"
 AMOUNT_TEXT_COLOR = (0, 255, 255)  # Yellow (BGR)
 AMOUNT_FONT_SCALE = 0.7
 
+# Supabase storage settings
+SUPABASE_URL = "https://afwpcbmhvjwrnolhrocz.supabase.co"
+SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmd3BjYm1odmp3cm5vbGhyb2N6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTM2NzYwOCwiZXhwIjoyMDc2OTQzNjA4fQ.32C1dNH0-aQFhpODSlw9UzAj721kjP_BIZfuS-2VMGE"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmd3BjYm1odmp3cm5vbGhyb2N6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjc2MDgsImV4cCI6MjA3Njk0MzYwOH0.Sjg-8h3tEOn0eoGR3GK-DPz_5dCwS07MZFpkC-qL_Bs"
+SUPABASE_BUCKET_NAME = "detected-faces"
+ENABLE_SUPABASE_UPLOAD = True  # Enable automatic upload to Supabase
+
 # Stream types
 STREAM_TYPE_WEBCAM = "webcam"
 STREAM_TYPE_EXTERNAL = "external"

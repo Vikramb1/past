@@ -7,4 +7,5 @@ deepgram-sdk==3.4.0
 ollama>=0.1.0
 pyaudio>=0.2.13
 requests>=2.31.0
+supabase>=2.0.0
 

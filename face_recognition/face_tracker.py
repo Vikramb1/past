@@ -5,6 +5,7 @@ Prevents duplicate saves by comparing face encodings.
 import os
 import json
 import hashlib
+import time
 import numpy as np
 from datetime import datetime
 from typing import Optional, Dict, Tuple, List
@@ -43,6 +44,15 @@ class FaceTracker:
         
         # Counter for new person IDs
         self.next_person_id = 1
+        
+        # Initialize Supabase storage if enabled
+        self.supabase_storage = None
+        if config.ENABLE_SUPABASE_UPLOAD:
+            try:
+                from supabase_storage import SupabaseStorage
+                self.supabase_storage = SupabaseStorage()
+            except Exception as e:
+                print(f"⚠️  Failed to initialize Supabase: {e}")
         
         # Create directories
         os.makedirs(detected_faces_dir, exist_ok=True)
@@ -194,14 +204,25 @@ class FaceTracker:
         # New face - save it
         person_id = self._generate_person_id()
         
+        # Generate timestamp for filename
+        timestamp = int(time.time())
+        
         # Crop face from image
         top, right, bottom, left = face_location
         face_crop = self._crop_face_with_padding(face_image, top, right, bottom, left)
         
-        # Save face image
-        image_filename = f"{person_id}.jpg"
+        # Save face image with timestamp in filename as PNG
+        image_filename = f"{person_id}_{timestamp}.png"
         image_path = os.path.join(self.detected_faces_dir, image_filename)
         cv2.imwrite(image_path, face_crop)
+        
+        # Upload to Supabase if enabled
+        supabase_url = None
+        if self.supabase_storage:
+            storage_path = f"faces/{image_filename}"
+            upload_result = self.supabase_storage.upload_face_image(image_path, storage_path)
+            if upload_result and upload_result.get('success'):
+                supabase_url = upload_result.get('public_url')
         
         # Add to in-memory tracking
         self.tracked_encodings.append(face_encoding)
@@ -214,6 +235,9 @@ class FaceTracker:
             'first_seen': now,
             'last_seen': now,
             'image_path': f"detected_faces/{image_filename}",
+            'image_filename': image_filename,
+            'timestamp': timestamp,
+            'supabase_url': supabase_url,
             'encoding_hash': self._encoding_to_hash(face_encoding),
             'detection_count': 1,
             'person_info': None,  # Will be populated by API call
@@ -223,7 +247,9 @@ class FaceTracker:
         # Save registry
         self._save_registry()
         
-        print(f"New face detected and saved: {person_id}")
+        print(f"New face detected and saved: {person_id} ({image_filename})")
+        if supabase_url:
+            print(f"   Supabase URL: {supabase_url}")
         
         return person_id, True
     

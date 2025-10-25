@@ -230,7 +230,7 @@ class CryptoPaymentHandler:
             return {
                 'success': False,
                 'message': 'Server not reachable',
-                'error': 'Failed to connect to localhost:3000'
+                'error': 'Failed to connect to localhost:3001'
             }
         
         except Exception as e:
