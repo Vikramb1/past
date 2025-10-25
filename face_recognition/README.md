@@ -9,6 +9,8 @@ A Python-based real-time face detection and recognition system that streams from
 - **Face recognition**: Identify known individuals from a database
 - **Automatic face tracking**: Auto-saves unique detected faces (one per person) for later identification
 - **Duplicate prevention**: Uses face encoding comparison to avoid saving the same person multiple times
+- **Person information display**: API integration showing contact info and employment history next to faces
+- **Hand gesture recognition**: Real-time snap/click detection with MediaPipe (NEW!)
 - **Event logging**: Comprehensive logging of detections and recognitions to CSV/JSON
 - **Persistent tracking**: Remembers detected faces across application restarts
 - **Performance optimized**: Frame skipping, downscaling, and caching for real-time performance
@@ -119,6 +121,65 @@ Edit `config.py` to customize:
 - `AUTO_SAVE_DETECTED_FACES = True` - Enable/disable auto-save
 - `DUPLICATE_THRESHOLD = 0.6` - Adjust duplicate detection sensitivity (lower = stricter)
 
+### 5. Person Information Display (NEW!)
+
+The system can fetch and display detailed person information next to detected faces:
+
+**How it works:**
+- When a new face is detected, API is called with person's image
+- Person details (name, email, phone, employment history) are fetched
+- Information is displayed in a box next to the person's face
+- API responses are cached (no repeated calls for same person)
+
+**What's displayed:**
+- Full name
+- Email address
+- Phone number
+- Employment history (role, company, years)
+
+**Current Implementation:**
+- Uses dummy/mock API responses for testing
+- Ready for real API integration (just swap the endpoint)
+- Configurable display position and styling
+
+**Configuration:**
+Edit `config.py` to customize:
+- `ENABLE_PERSON_INFO_API = True` - Enable/disable feature
+- `INFO_DISPLAY_POSITION = "right"` - Position: "right", "left", "top", "bottom"
+- `API_CALL_DELAY = 0.5` - Simulated API latency (seconds)
+- Customize colors, fonts, and box styling
+
+### 6. Gesture Recognition (NEW!)
+
+The system can detect hand gestures like snaps and clicks in real-time:
+
+**How it works:**
+- Uses MediaPipe for hand tracking (detects up to 2 hands)
+- Monitors finger positions (21 landmarks per hand)
+- Detects snap/click gestures by tracking thumb-to-middle-finger distance
+- Rapid finger closure triggers detection
+- Displays bounding box around hand with "SNAP!" label
+
+**Gesture Detection:**
+- **Snap**: Rapid closure of thumb and middle finger
+- Threshold-based (configurable distance and velocity)
+- Cooldown period prevents repeated triggers
+- Works with both left and right hands
+
+**Visual Feedback:**
+- Green box around hand when snap detected
+- Blue box for detected hand (no gesture)
+- "SNAP!" label appears when gesture triggered
+- Optional: Show all 21 hand landmarks for debugging
+
+**Configuration:**
+Edit `config.py` to customize:
+- `ENABLE_GESTURE_DETECTION = True` - Enable/disable feature
+- `GESTURE_DETECTION_CONFIDENCE = 0.7` - Detection sensitivity
+- `GESTURE_COOLDOWN_SECONDS = 1.0` - Time between repeated detections
+- `SNAP_DISTANCE_THRESHOLD = 25` - Pixel distance for snap trigger
+- `SHOW_HAND_LANDMARKS = False` - Show debug landmarks
+
 ## Configuration
 
 Edit `config.py` to customize settings:
@@ -155,18 +216,21 @@ face_recognition/
 ├── stream_handler.py         # Video stream management
 ├── face_engine.py            # Face detection & recognition
 ├── face_database.py          # Known faces database
-├── face_tracker.py           # Face tracking & auto-save (NEW!)
+├── face_tracker.py           # Face tracking & auto-save
+├── person_info.py            # Person info API client
+├── info_display.py           # Info box renderer
+├── gesture_detector.py       # Hand gesture recognition (NEW!)
 ├── event_logger.py           # Event logging system
 ├── utils.py                  # Helper functions
 ├── add_person.py             # Add person utility
 ├── test_setup.py             # Setup verification
 ├── known_faces/              # Known face images (organized by person)
 ├── saved_faces/              # Manually saved faces
-├── detected_faces/           # Auto-saved detected faces (NEW!)
+├── detected_faces/           # Auto-saved detected faces
 ├── logs/                     # Event logs (CSV/JSON)
 └── data/                     # Cached data
     ├── encodings.pkl         # Face encodings cache
-    └── face_registry.json    # Detected faces registry (NEW!)
+    └── face_registry.json    # Detected faces registry
 ```
 
 ## Performance Optimization

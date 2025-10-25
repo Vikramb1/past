@@ -59,6 +59,42 @@ SAVE_FACE_SIZE = (200, 200)  # Size to save face crops
 AUTO_SAVE_DETECTED_FACES = True  # Automatically save all detected faces
 DUPLICATE_THRESHOLD = 0.6  # Face distance threshold for duplicate detection (lower = stricter)
 
+# Person information API settings
+ENABLE_PERSON_INFO_API = True  # Fetch and display person information
+API_CALL_DELAY = 0.5  # Simulated API delay in seconds (for dummy API)
+INFO_DISPLAY_POSITION = "right"  # Position relative to face: "right", "left", "top", "bottom"
+
+# Info box display settings
+INFO_BOX_BG_COLOR = (40, 40, 40)  # Dark gray background (BGR)
+INFO_BOX_BORDER_COLOR = (100, 200, 255)  # Light blue border (BGR)
+INFO_BOX_BORDER_THICKNESS = 1
+INFO_BOX_ALPHA = 0.85  # Background transparency (0.0-1.0, higher = more opaque)
+INFO_BOX_PADDING_LEFT = 8
+INFO_BOX_PADDING_RIGHT = 8
+INFO_BOX_PADDING_TOP = 8
+INFO_BOX_PADDING_BOTTOM = 8
+INFO_BOX_MARGIN = 5  # Space between face box and info box
+
+# Info text settings
+INFO_TEXT_COLOR = (255, 255, 255)  # White text (BGR)
+INFO_FONT_SCALE_TITLE = 0.45  # Font size for name
+INFO_FONT_SCALE_NORMAL = 0.35  # Font size for email/phone
+INFO_FONT_SCALE_SMALL = 0.3  # Font size for employment details
+INFO_LINE_SPACING = 3  # Pixels between lines
+
+# Gesture detection settings
+ENABLE_GESTURE_DETECTION = True  # Enable hand gesture recognition
+GESTURE_DETECTION_CONFIDENCE = 0.7  # MediaPipe confidence threshold (0.0-1.0)
+GESTURE_COOLDOWN_SECONDS = 1.0  # Prevent repeated triggers (seconds)
+SNAP_DISTANCE_THRESHOLD = 25  # Finger distance threshold for snap (pixels)
+SNAP_VELOCITY_THRESHOLD = 0.3  # Time window for snap detection (seconds)
+
+# Gesture visual settings
+GESTURE_BOX_COLOR = (0, 255, 0)  # Green for detected gesture (BGR)
+GESTURE_BOX_THICKNESS = 3  # Box line thickness
+SHOW_HAND_LANDMARKS = False  # Show all 21 hand landmarks (debug mode)
+GESTURE_LABEL_TEXT = "SNAP!"  # Text to display when gesture detected
+
 # Stream types
 STREAM_TYPE_WEBCAM = "webcam"
 STREAM_TYPE_EXTERNAL = "external"

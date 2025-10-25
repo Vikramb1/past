@@ -16,6 +16,9 @@ from face_database import FaceDatabase
 from face_engine import FaceEngine
 from event_logger import EventLogger
 from face_tracker import FaceTracker
+from person_info import get_api_instance, PersonInfo
+from info_display import draw_person_info_box
+from gesture_detector import GestureDetector
 
 
 class FaceRecognitionApp:
@@ -64,6 +67,18 @@ class FaceRecognitionApp:
         self.face_engine = FaceEngine(self.face_database, self.face_tracker)
         self.event_logger = EventLogger()
         
+        # Initialize person info API if enabled
+        if config.ENABLE_PERSON_INFO_API:
+            self.person_api = get_api_instance()
+        else:
+            self.person_api = None
+        
+        # Initialize gesture detector if enabled
+        if config.ENABLE_GESTURE_DETECTION:
+            self.gesture_detector = GestureDetector()
+        else:
+            self.gesture_detector = None
+        
         # Display settings
         self.display_width = display_width
         self.display_height = display_height
@@ -89,6 +104,10 @@ class FaceRecognitionApp:
         print("  SPACE     - Pause/Resume")
         if config.AUTO_SAVE_DETECTED_FACES:
             print("\nAUTO-SAVE: Enabled - Detected faces saved automatically")
+        if config.ENABLE_PERSON_INFO_API:
+            print("PERSON INFO API: Enabled - Fetching person details")
+        if config.ENABLE_GESTURE_DETECTION:
+            print("GESTURE DETECTION: Enabled - Detecting snaps/clicks")
         print("=" * 60)
     
     def run(self) -> None:
@@ -134,6 +153,24 @@ class FaceRecognitionApp:
                 # Detect and recognize faces (pass BGR frame for tracking)
                 face_locations, face_names, face_confidences, tracked_ids = \
                     self.face_engine.detect_and_recognize_faces(rgb_frame, frame)
+                
+                # Fetch person info for newly detected faces
+                if self.person_api and self.face_tracker:
+                    for tracked_id in tracked_ids:
+                        if tracked_id and not self.face_tracker.has_api_data(tracked_id):
+                            # Call API for new person
+                            person_info = self.person_api.get_person_info(tracked_id)
+                            if person_info:
+                                # Store API response in tracker
+                                self.face_tracker.store_api_response(
+                                    tracked_id,
+                                    person_info.to_dict()
+                                )
+                
+                # Detect gestures if enabled
+                gesture_events = []
+                if self.gesture_detector:
+                    gesture_events, frame = self.gesture_detector.detect_gestures(frame)
                 
                 # Log events
                 if config.LOG_DETECTIONS or config.LOG_RECOGNITIONS:
@@ -236,6 +273,22 @@ class FaceRecognitionApp:
                 config.FONT_SCALE,
                 config.SHOW_CONFIDENCE
             )
+            
+            # Draw person info box if API is enabled and data is available
+            if config.ENABLE_PERSON_INFO_API and self.face_tracker and tracked_id:
+                api_data = self.face_tracker.get_api_data(tracked_id)
+                if api_data:
+                    try:
+                        person_info = PersonInfo.from_dict(api_data)
+                        frame = draw_person_info_box(
+                            frame,
+                            person_info,
+                            (top, right, bottom, left),
+                            config.INFO_DISPLAY_POSITION
+                        )
+                    except Exception as e:
+                        # Silently handle display errors
+                        pass
         
         return frame
     
@@ -291,6 +344,10 @@ class FaceRecognitionApp:
             print(f"Unique faces detected: {stats['total_unique_faces']}")
             print(f"Total detections: {stats['total_detections']}")
             print(f"Faces saved to: {config.DETECTED_FACES_DIR}")
+        
+        # Close gesture detector if enabled
+        if self.gesture_detector:
+            self.gesture_detector.close()
         
         cv2.destroyAllWindows()
         print("Application closed")

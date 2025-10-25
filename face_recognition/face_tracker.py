@@ -215,7 +215,9 @@ class FaceTracker:
             'last_seen': now,
             'image_path': f"detected_faces/{image_filename}",
             'encoding_hash': self._encoding_to_hash(face_encoding),
-            'detection_count': 1
+            'detection_count': 1,
+            'person_info': None,  # Will be populated by API call
+            'api_called': False  # Flag to track if API has been called
         }
         
         # Save registry
@@ -265,6 +267,47 @@ class FaceTracker:
             Person data dictionary or None
         """
         return self.registry.get(person_id)
+    
+    def store_api_response(self, person_id: str, person_info_dict: Dict) -> None:
+        """
+        Store API response data for a person.
+        
+        Args:
+            person_id: Person ID
+            person_info_dict: PersonInfo dictionary from API
+        """
+        if person_id in self.registry:
+            self.registry[person_id]['person_info'] = person_info_dict
+            self.registry[person_id]['api_called'] = True
+            self._save_registry()
+    
+    def has_api_data(self, person_id: str) -> bool:
+        """
+        Check if API data has been fetched for a person.
+        
+        Args:
+            person_id: Person ID to check
+        
+        Returns:
+            True if API has been called for this person
+        """
+        person_data = self.registry.get(person_id)
+        return person_data is not None and person_data.get('api_called', False)
+    
+    def get_api_data(self, person_id: str) -> Optional[Dict]:
+        """
+        Get stored API response data for a person.
+        
+        Args:
+            person_id: Person ID
+        
+        Returns:
+            PersonInfo dictionary or None
+        """
+        person_data = self.registry.get(person_id)
+        if person_data:
+            return person_data.get('person_info')
+        return None
     
     def get_statistics(self) -> Dict:
         """
