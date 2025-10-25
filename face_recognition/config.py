@@ -7,9 +7,11 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 KNOWN_FACES_DIR = os.path.join(BASE_DIR, "known_faces")
 SAVED_FACES_DIR = os.path.join(BASE_DIR, "saved_faces")
+DETECTED_FACES_DIR = os.path.join(BASE_DIR, "detected_faces")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 ENCODINGS_FILE = os.path.join(DATA_DIR, "encodings.pkl")
+FACE_REGISTRY_FILE = os.path.join(DATA_DIR, "face_registry.json")
 
 # Video source settings
 DEFAULT_CAMERA_INDEX = 0  # Laptop camera
@@ -52,6 +54,10 @@ LOG_INTERVAL = 1.0  # Minimum seconds between logging the same face
 # Face saving settings
 SAVE_UNKNOWN_FACES = True
 SAVE_FACE_SIZE = (200, 200)  # Size to save face crops
+
+# Face tracking settings (auto-save detected faces)
+AUTO_SAVE_DETECTED_FACES = True  # Automatically save all detected faces
+DUPLICATE_THRESHOLD = 0.6  # Face distance threshold for duplicate detection (lower = stricter)
 
 # Stream types
 STREAM_TYPE_WEBCAM = "webcam"

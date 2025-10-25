@@ -7,8 +7,10 @@ A Python-based real-time face detection and recognition system that streams from
 - **Multi-source video streaming**: Webcam, external USB camera, or network streams (RTSP/HTTP)
 - **Real-time face detection**: Fast face detection using optimized models
 - **Face recognition**: Identify known individuals from a database
+- **Automatic face tracking**: Auto-saves unique detected faces (one per person) for later identification
+- **Duplicate prevention**: Uses face encoding comparison to avoid saving the same person multiple times
 - **Event logging**: Comprehensive logging of detections and recognitions to CSV/JSON
-- **Auto-save faces**: Save detected faces for building your face database
+- **Persistent tracking**: Remembers detected faces across application restarts
 - **Performance optimized**: Frame skipping, downscaling, and caching for real-time performance
 - **Extensible**: Ready for future integration with Snap AR Spectacles
 
@@ -86,9 +88,36 @@ python main.py --type network --source "rtsp://your-stream-url"
 While the application is running:
 
 - **q** or **ESC** - Quit application
-- **s** - Save currently detected faces to `saved_faces/`
+- **s** - Save currently detected faces manually to `saved_faces/`
 - **r** - Rebuild face database from `known_faces/`
 - **SPACE** - Pause/Resume video
+
+### 4. Automatic Face Tracking (NEW!)
+
+The system automatically saves detected faces to help you identify people later:
+
+**How it works:**
+- Every unique face is automatically saved to `detected_faces/`
+- Assigned incremental IDs: `person_001.jpg`, `person_002.jpg`, etc.
+- Duplicate detection prevents saving the same person multiple times
+- Tracking persists across application restarts
+- Metadata saved in `data/face_registry.json`
+
+**Viewing detected faces:**
+```bash
+ls detected_faces/
+# person_001.jpg, person_002.jpg, person_003.jpg, ...
+```
+
+**Using detected faces for identification:**
+After the system runs, review `detected_faces/` to identify who people are. You can then:
+1. Add their photos to `known_faces/person_name/` for future recognition
+2. Use the saved images for your own identification workflow
+
+**Configuration:**
+Edit `config.py` to customize:
+- `AUTO_SAVE_DETECTED_FACES = True` - Enable/disable auto-save
+- `DUPLICATE_THRESHOLD = 0.6` - Adjust duplicate detection sensitivity (lower = stricter)
 
 ## Configuration
 
@@ -126,15 +155,18 @@ face_recognition/
 ├── stream_handler.py         # Video stream management
 ├── face_engine.py            # Face detection & recognition
 ├── face_database.py          # Known faces database
+├── face_tracker.py           # Face tracking & auto-save (NEW!)
 ├── event_logger.py           # Event logging system
 ├── utils.py                  # Helper functions
 ├── add_person.py             # Add person utility
 ├── test_setup.py             # Setup verification
 ├── known_faces/              # Known face images (organized by person)
-├── saved_faces/              # Auto-saved detected faces
+├── saved_faces/              # Manually saved faces
+├── detected_faces/           # Auto-saved detected faces (NEW!)
 ├── logs/                     # Event logs (CSV/JSON)
-└── data/                     # Cached encodings
-    └── encodings.pkl
+└── data/                     # Cached data
+    ├── encodings.pkl         # Face encodings cache
+    └── face_registry.json    # Detected faces registry (NEW!)
 ```
 
 ## Performance Optimization

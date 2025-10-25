@@ -32,6 +32,11 @@ face_recognition/data/*
 !face_recognition/data/.gitkeep
 face_recognition/*.pkl
 
+# Detected faces are kept (user data for identification)
+# Uncomment below to ignore detected faces
+# face_recognition/detected_faces/*
+# !face_recognition/detected_faces/.gitkeep
+
 # Ignore known_faces directory except for example
 face_recognition/known_faces/*
 !face_recognition/known_faces/.gitkeep

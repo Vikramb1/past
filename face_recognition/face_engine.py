@@ -7,19 +7,22 @@ from typing import List, Tuple, Optional
 import time
 import config
 from face_database import FaceDatabase
+from face_tracker import FaceTracker
 
 
 class FaceEngine:
     """Main face detection and recognition engine."""
     
-    def __init__(self, face_database: FaceDatabase):
+    def __init__(self, face_database: FaceDatabase, face_tracker: Optional[FaceTracker] = None):
         """
         Initialize the face engine.
         
         Args:
             face_database: FaceDatabase instance with known faces
+            face_tracker: Optional FaceTracker instance for auto-saving detected faces
         """
         self.face_database = face_database
+        self.face_tracker = face_tracker
         self.detection_model = config.DETECTION_MODEL
         self.recognition_tolerance = config.RECOGNITION_TOLERANCE
         self.process_every_n_frames = config.PROCESS_EVERY_N_FRAMES
@@ -31,27 +34,33 @@ class FaceEngine:
         self.last_face_locations = []
         self.last_face_names = []
         self.last_face_confidences = []
+        self.last_face_encodings = []
+        self.last_tracked_ids = []
         
         print(f"Face engine initialized")
         print(f"Detection model: {self.detection_model}")
         print(f"Recognition tolerance: {self.recognition_tolerance}")
         print(f"Processing every {self.process_every_n_frames} frame(s)")
         print(f"Known faces loaded: {self.face_database.get_face_count()}")
+        if self.face_tracker:
+            print(f"Face tracking: ENABLED")
     
     def detect_and_recognize_faces(
         self,
         frame: np.ndarray,
+        bgr_frame: Optional[np.ndarray] = None,
         scale: float = config.DETECTION_SCALE
-    ) -> Tuple[List[Tuple], List[str], List[float]]:
+    ) -> Tuple[List[Tuple], List[str], List[float], List[str]]:
         """
         Detect and recognize faces in a frame.
         
         Args:
             frame: RGB image frame
+            bgr_frame: Optional BGR frame for face tracking (required if tracking enabled)
             scale: Scale factor for detection (smaller = faster)
         
         Returns:
-            Tuple of (face_locations, face_names, confidences)
+            Tuple of (face_locations, face_names, confidences, tracked_ids)
         """
         self.frame_count += 1
         
@@ -61,7 +70,8 @@ class FaceEngine:
             return (
                 self.last_face_locations,
                 self.last_face_names,
-                self.last_face_confidences
+                self.last_face_confidences,
+                self.last_tracked_ids
             )
         
         # Scale down frame for faster detection
@@ -82,7 +92,8 @@ class FaceEngine:
             self.last_face_locations = []
             self.last_face_names = []
             self.last_face_confidences = []
-            return [], [], []
+            self.last_tracked_ids = []
+            return [], [], [], []
         
         # Limit number of faces to process
         if len(face_locations) > config.MAX_FACES_TO_PROCESS:
@@ -98,6 +109,7 @@ class FaceEngine:
         # Recognize faces
         face_names = []
         face_confidences = []
+        tracked_ids = []
         
         known_encodings, known_names = self.face_database.get_known_faces()
         
@@ -115,12 +127,26 @@ class FaceEngine:
                 face_names.append(name)
                 face_confidences.append(confidence)
         
+        # Track faces if tracker is enabled
+        if self.face_tracker and config.AUTO_SAVE_DETECTED_FACES and bgr_frame is not None:
+            for i, (face_location, face_encoding) in enumerate(zip(face_locations, face_encodings)):
+                person_id, is_new = self.face_tracker.track_face(
+                    bgr_frame,
+                    face_encoding,
+                    face_location
+                )
+                tracked_ids.append(person_id)
+        else:
+            tracked_ids = [""] * len(face_encodings)
+        
         # Cache results
         self.last_face_locations = face_locations
         self.last_face_names = face_names
         self.last_face_confidences = face_confidences
+        self.last_face_encodings = face_encodings
+        self.last_tracked_ids = tracked_ids
         
-        return face_locations, face_names, face_confidences
+        return face_locations, face_names, face_confidences, tracked_ids
     
     def _recognize_face(
         self,

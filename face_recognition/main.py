@@ -15,6 +15,7 @@ from stream_handler import StreamHandler
 from face_database import FaceDatabase
 from face_engine import FaceEngine
 from event_logger import EventLogger
+from face_tracker import FaceTracker
 
 
 class FaceRecognitionApp:
@@ -44,6 +45,7 @@ class FaceRecognitionApp:
         utils.ensure_directories_exist(
             config.KNOWN_FACES_DIR,
             config.SAVED_FACES_DIR,
+            config.DETECTED_FACES_DIR,
             config.LOGS_DIR,
             config.DATA_DIR
         )
@@ -52,7 +54,14 @@ class FaceRecognitionApp:
         print("\nInitializing components...")
         self.stream_handler = StreamHandler(stream_type, source)
         self.face_database = FaceDatabase()
-        self.face_engine = FaceEngine(self.face_database)
+        
+        # Initialize face tracker if auto-save is enabled
+        if config.AUTO_SAVE_DETECTED_FACES:
+            self.face_tracker = FaceTracker()
+        else:
+            self.face_tracker = None
+        
+        self.face_engine = FaceEngine(self.face_database, self.face_tracker)
         self.event_logger = EventLogger()
         
         # Display settings
@@ -75,9 +84,11 @@ class FaceRecognitionApp:
         print("\n" + "=" * 60)
         print("CONTROLS:")
         print("  q or ESC  - Quit application")
-        print("  s         - Save detected faces")
+        print("  s         - Save detected faces manually")
         print("  r         - Rebuild face database")
         print("  SPACE     - Pause/Resume")
+        if config.AUTO_SAVE_DETECTED_FACES:
+            print("\nAUTO-SAVE: Enabled - Detected faces saved automatically")
         print("=" * 60)
     
     def run(self) -> None:
@@ -120,9 +131,9 @@ class FaceRecognitionApp:
                 # Convert BGR to RGB for face_recognition library
                 rgb_frame = utils.convert_bgr_to_rgb(frame)
                 
-                # Detect and recognize faces
-                face_locations, face_names, face_confidences = \
-                    self.face_engine.detect_and_recognize_faces(rgb_frame)
+                # Detect and recognize faces (pass BGR frame for tracking)
+                face_locations, face_names, face_confidences, tracked_ids = \
+                    self.face_engine.detect_and_recognize_faces(rgb_frame, frame)
                 
                 # Log events
                 if config.LOG_DETECTIONS or config.LOG_RECOGNITIONS:
@@ -143,7 +154,8 @@ class FaceRecognitionApp:
                     frame,
                     face_locations,
                     face_names,
-                    face_confidences
+                    face_confidences,
+                    tracked_ids
                 )
                 
                 # Draw FPS if enabled
@@ -194,24 +206,31 @@ class FaceRecognitionApp:
         frame,
         face_locations,
         face_names,
-        face_confidences
+        face_confidences,
+        tracked_ids
     ):
         """Draw face detection and recognition results on frame."""
-        for (top, right, bottom, left), name, confidence in zip(
-            face_locations, face_names, face_confidences
-        ):
+        for i, ((top, right, bottom, left), name, confidence, tracked_id) in enumerate(zip(
+            face_locations, face_names, face_confidences, tracked_ids
+        )):
             # Choose color based on recognition status
             if name == "Unknown":
                 color = config.BOX_COLOR_UNKNOWN
             else:
                 color = config.BOX_COLOR_KNOWN
             
+            # Use tracked ID if available, otherwise use recognition name
+            display_name = name
+            if tracked_id:
+                # Show tracked ID for all faces
+                display_name = tracked_id if name == "Unknown" else f"{name} ({tracked_id})"
+            
             # Draw face box and label
             frame = utils.draw_face_box(
                 frame,
                 top, right, bottom, left,
-                name,
-                confidence if config.SHOW_CONFIDENCE else None,
+                display_name,
+                confidence if config.SHOW_CONFIDENCE and name != "Unknown" else None,
                 color,
                 config.BOX_THICKNESS,
                 config.FONT_SCALE,
@@ -264,6 +283,15 @@ class FaceRecognitionApp:
         print("\nCleaning up...")
         self.stream_handler.release()
         self.event_logger.close()
+        
+        # Print face tracker stats if enabled
+        if self.face_tracker:
+            stats = self.face_tracker.get_statistics()
+            print("\n=== Face Tracker Statistics ===")
+            print(f"Unique faces detected: {stats['total_unique_faces']}")
+            print(f"Total detections: {stats['total_detections']}")
+            print(f"Faces saved to: {config.DETECTED_FACES_DIR}")
+        
         cv2.destroyAllWindows()
         print("Application closed")
 
