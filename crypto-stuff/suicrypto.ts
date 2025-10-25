@@ -5,6 +5,13 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { fromB64, toB64 } from '@mysten/sui/utils';
 import { getFaucetHost, requestSuiFromFaucetV1 } from '@mysten/sui/faucet';
 import { sendCryptoGiftEmail, verifyEmailConfig } from './emailService';
+import {
+    generateXRPLKeypair,
+    checkXRPLBalance,
+    sendXRPL,
+    requestXRPLFromFaucet,
+    giftXRPL
+} from './xrplService';
 
 // Configuration for testnet
 const NETWORK = "testnet";
@@ -181,7 +188,7 @@ async function sendSui(keypair: Ed25519Keypair, recipientAddress: string = DEFAU
 }
 
 const app = express();
-const PORT = 3001;
+const PORT = 3000;
 
 // Middleware
 app.use(express.json());
@@ -565,67 +572,272 @@ app.post('/gift-crypto', async (req: Request, res: Response) => {
     }
 });
 
+// XRPL EVM Sidechain Endpoints
+
+// Generate a new XRPL EVM keypair
+app.get('/xrpl/generate-keypair', async (req: Request, res: Response) => {
+    try {
+        const keypair = generateXRPLKeypair();
+        const balance = await checkXRPLBalance(keypair.address);
+
+        res.json({
+            keypair: {
+                address: keypair.address,
+                privateKey: keypair.privateKey,
+                publicKey: keypair.publicKey,
+                mnemonic: keypair.mnemonic
+            },
+            balance: balance,
+            network: 'XRPL EVM Testnet',
+            chainId: 1449000,
+            message: 'New XRPL EVM keypair generated. You may need to get test XRP from a faucet.',
+            explorerUrl: `https://explorer.testnet.xrplevm.org/address/${keypair.address}`,
+            rpcUrl: 'https://rpc.testnet.xrplevm.org'
+        });
+    } catch (error: any) {
+        console.error('Error generating XRPL keypair:', error);
+        res.status(500).json({ error: 'Failed to generate XRPL keypair', details: error.message });
+    }
+});
+
+// Send XRP on XRPL EVM Sidechain
+app.post('/xrpl/send', async (req: Request, res: Response) => {
+    try {
+        const { privateKey, recipientAddress, amount } = req.body;
+
+        if (!privateKey) {
+            return res.status(400).json({
+                error: 'Private key is required',
+                message: 'Please provide a private key (hex format starting with 0x)'
+            });
+        }
+
+        if (!recipientAddress) {
+            return res.status(400).json({
+                error: 'Recipient address is required'
+            });
+        }
+
+        const finalAmount = amount || '0.0001'; // Default 0.0001 XRP
+        const result = await sendXRPL(privateKey, recipientAddress, finalAmount);
+
+        res.json(result);
+    } catch (error: any) {
+        console.error('Error sending XRP:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to send XRP',
+            details: error.message
+        });
+    }
+});
+
+// Check XRPL EVM balance
+app.get('/xrpl/balance/:address', async (req: Request, res: Response) => {
+    try {
+        const { address } = req.params;
+
+        if (!address) {
+            return res.status(400).json({ error: 'Address is required' });
+        }
+
+        const balance = await checkXRPLBalance(address);
+
+        res.json({
+            address: address,
+            ...balance,
+            network: 'XRPL EVM Testnet',
+            chainId: 1449000,
+            explorerUrl: `https://explorer.testnet.xrplevm.org/address/${address}`
+        });
+    } catch (error: any) {
+        console.error('Error checking XRPL balance:', error);
+        res.status(500).json({
+            error: 'Failed to check balance',
+            details: error.message
+        });
+    }
+});
+
+// Request XRP from faucet (if available)
+app.post('/xrpl/faucet', async (req: Request, res: Response) => {
+    try {
+        const { address } = req.body;
+
+        if (!address) {
+            return res.status(400).json({
+                error: 'Address is required',
+                message: 'Please provide an XRPL EVM address to receive test XRP'
+            });
+        }
+
+        const result = await requestXRPLFromFaucet(address);
+
+        res.json({
+            ...result,
+            address: address,
+            network: 'XRPL EVM Testnet',
+            note: 'Faucet availability may vary. You can also try the official XRPL faucet.'
+        });
+    } catch (error: any) {
+        console.error('Error requesting from XRPL faucet:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to request from faucet',
+            details: error.message
+        });
+    }
+});
+
+// Gift XRP with email notification
+app.post('/xrpl/gift-crypto', async (req: Request, res: Response) => {
+    try {
+        const {
+            senderPrivateKey,
+            recipientEmail,
+            amount,
+            senderName
+        } = req.body;
+
+        if (!senderPrivateKey) {
+            return res.status(400).json({
+                error: 'Sender private key is required',
+                message: 'Please provide the private key to send from (hex format starting with 0x)'
+            });
+        }
+
+        const emailToUse = recipientEmail || 'sanjay.amirthraj@gmail.com';
+        const finalAmount = amount || '0.0001'; // Default 0.0001 XRP
+
+        console.log(`Processing XRPL gift: ${finalAmount} XRP to ${emailToUse}`);
+
+        const result = await giftXRPL(
+            senderPrivateKey,
+            emailToUse,
+            finalAmount,
+            senderName
+        );
+
+        if (!result.success) {
+            return res.status(500).json(result);
+        }
+
+        res.json({
+            ...result,
+            network: 'XRPL EVM Testnet',
+            chainId: 1449000,
+            instructions: result.email?.sent
+                ? `The recipient has been emailed their wallet credentials at ${emailToUse}. They can now access their ${finalAmount} XRP!`
+                : `Email failed to send. Please manually share the wallet credentials with the recipient.`
+        });
+
+    } catch (error: any) {
+        console.error('Error in XRPL gift-crypto:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to complete XRPL crypto gift',
+            details: error.message
+        });
+    }
+});
+
 // Add a root endpoint with API documentation
 app.get('/', (req: Request, res: Response) => {
     res.json({
-        name: "SUI Testnet API",
-        network: NETWORK,
+        name: "Multi-Chain Crypto API",
+        networks: {
+            sui: "SUI Testnet",
+            xrpl: "XRPL EVM Sidechain Devnet"
+        },
         endpoints: {
-            "GET /": "API documentation",
-            "GET /generate-keypair": "Generate a new SUI keypair",
-            "POST /send-sui": "Send SUI tokens (requires privateKey, recipientAddress, and optional amount in request body)",
-            "POST /gift-crypto": "Gift crypto to someone by generating a new wallet and emailing them the keys",
-            "GET /balance/:address": "Check balance of a SUI address",
-            "POST /faucet": "Request test SUI from faucet (requires address in request body)",
-            "GET /verify/:digest": "Verify a transaction by its digest"
+            sui: {
+                "GET /generate-keypair": "Generate a new SUI keypair",
+                "POST /send-sui": "Send SUI tokens",
+                "POST /gift-crypto": "Gift SUI with email notification",
+                "GET /balance/:address": "Check SUI balance",
+                "POST /faucet": "Request test SUI from faucet",
+                "GET /verify/:digest": "Verify SUI transaction"
+            },
+            xrpl: {
+                "GET /xrpl/generate-keypair": "Generate a new XRPL EVM keypair",
+                "POST /xrpl/send": "Send XRP on EVM sidechain",
+                "POST /xrpl/gift-crypto": "Gift XRP with email notification",
+                "GET /xrpl/balance/:address": "Check XRP balance",
+                "POST /xrpl/faucet": "Request test XRP from faucet"
+            }
         },
         examples: {
-            sendSui: {
-                method: "POST",
-                endpoint: "/send-sui",
-                body: {
-                    privateKey: "0x... or base64 or suiprivkey...",
-                    recipientAddress: "0x...",
-                    amount: 1000000
+            sui: {
+                sendSui: {
+                    method: "POST",
+                    endpoint: "/send-sui",
+                    body: {
+                        privateKey: "0x... or base64 or suiprivkey...",
+                        recipientAddress: "0x...",
+                        amount: 1000000
+                    }
+                },
+                giftCrypto: {
+                    method: "POST",
+                    endpoint: "/gift-crypto",
+                    body: {
+                        senderPrivateKey: "0x... or base64 or suiprivkey...",
+                        recipientEmail: "recipient@email.com",
+                        amount: 1000000,
+                        senderName: "Your Name (optional)"
+                    }
                 }
             },
-            giftCrypto: {
-                method: "POST",
-                endpoint: "/gift-crypto",
-                body: {
-                    senderPrivateKey: "0x... or base64 or suiprivkey...",
-                    recipientEmail: "recipient@email.com (defaults to sanjay.amirthraj@gmail.com if not provided)",
-                    amount: 1000000,
-                    senderName: "Your Name (optional)"
-                }
-            },
-            faucet: {
-                method: "POST",
-                endpoint: "/faucet",
-                body: {
-                    address: "0x..."
+            xrpl: {
+                sendXRP: {
+                    method: "POST",
+                    endpoint: "/xrpl/send",
+                    body: {
+                        privateKey: "0x...",
+                        recipientAddress: "0x...",
+                        amount: "0.0001"
+                    }
+                },
+                giftXRP: {
+                    method: "POST",
+                    endpoint: "/xrpl/gift-crypto",
+                    body: {
+                        senderPrivateKey: "0x...",
+                        recipientEmail: "recipient@email.com",
+                        amount: "0.0001",
+                        senderName: "Your Name (optional)"
+                    }
                 }
             }
         },
-        note: "1 SUI = 1,000,000,000 MIST. Default transfer amount is 0.001 SUI (1,000,000 MIST)"
+        notes: {
+            sui: "1 SUI = 1,000,000,000 MIST. Default transfer: 0.001 SUI",
+            xrpl: "XRPL EVM Sidechain uses XRP. Default transfer: 0.0001 XRP",
+            email: "Emails default to sanjay.amirthraj@gmail.com if not provided"
+        }
     });
 });
 
 // Start the server
 app.listen(PORT, () => {
-    console.log(`\n✨ SUI Testnet API Server Started ✨`);
-    console.log(`================================`);
-    console.log(`Network: ${NETWORK}`);
+    console.log(`\n✨ Multi-Chain Crypto API Server Started ✨`);
+    console.log(`============================================`);
     console.log(`Port: ${PORT}`);
-    console.log(`\nAvailable endpoints:`);
+    console.log(`\n🔷 SUI Testnet Endpoints:`);
     console.log(`  GET  http://localhost:${PORT}/                    - API documentation`);
-    console.log(`  GET  http://localhost:${PORT}/generate-keypair    - Generate new keypair`);
+    console.log(`  GET  http://localhost:${PORT}/generate-keypair    - Generate SUI keypair`);
     console.log(`  POST http://localhost:${PORT}/send-sui            - Send SUI tokens`);
-    console.log(`  POST http://localhost:${PORT}/gift-crypto         - Gift crypto with email notification`);
-    console.log(`  GET  http://localhost:${PORT}/balance/:address    - Check balance`);
+    console.log(`  POST http://localhost:${PORT}/gift-crypto         - Gift SUI with email`);
+    console.log(`  GET  http://localhost:${PORT}/balance/:address    - Check SUI balance`);
     console.log(`  POST http://localhost:${PORT}/faucet              - Request test SUI`);
-    console.log(`  GET  http://localhost:${PORT}/verify/:digest      - Verify transaction`);
-    console.log(`================================\n`);
+    console.log(`  GET  http://localhost:${PORT}/verify/:digest      - Verify SUI transaction`);
+    console.log(`\n🔶 XRPL EVM Sidechain Endpoints:`);
+    console.log(`  GET  http://localhost:${PORT}/xrpl/generate-keypair - Generate XRPL EVM keypair`);
+    console.log(`  POST http://localhost:${PORT}/xrpl/send            - Send XRP`);
+    console.log(`  POST http://localhost:${PORT}/xrpl/gift-crypto     - Gift XRP with email`);
+    console.log(`  GET  http://localhost:${PORT}/xrpl/balance/:address - Check XRP balance`);
+    console.log(`  POST http://localhost:${PORT}/xrpl/faucet          - Request test XRP`);
+    console.log(`============================================\n`);
 
     // Check email configuration on startup
     verifyEmailConfig().then(isValid => {
