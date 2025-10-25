@@ -1,5 +1,5 @@
-import Mailgun from 'mailgun.js';
-import FormData from 'form-data';
+const Mailgun = require('mailgun.js');
+const FormData = require('form-data');
 
 // HARDCODED Mailgun configuration
 const MAILGUN_API_KEY = 'e3ad96a6c4a661efd1accdd5e62a7801-ba8a60cd-e09445c0';
@@ -27,12 +27,17 @@ interface CryptoGiftEmailParams {
 
 // HTML email template for crypto gift notification
 function createCryptoGiftEmailHTML(params: CryptoGiftEmailParams): string {
+    // Check if this is an XRP transaction
+    const isXRP = params.amountSent.includes('XRP');
+    const cryptoName = isXRP ? 'XRP from XRPL Ledger' : 'SUI Cryptocurrency';
+    const blockchainName = isXRP ? 'XRPL EVM Testnet' : 'SUI blockchain (testnet)';
+
     return `
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>You've Received SUI Cryptocurrency!</title>
+        <title>You've Received ${cryptoName}!</title>
         <style>
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -129,15 +134,15 @@ function createCryptoGiftEmailHTML(params: CryptoGiftEmailParams): string {
     </head>
     <body>
         <div class="container">
-            <h1>🎉 Congratulations! You've Received Cryptocurrency!</h1>
+            <h1>🎉 Congratulations! You've Received ${cryptoName}!</h1>
 
             <p>Hello!</p>
 
-            <p>${params.senderName ? `<strong>${params.senderName}</strong>` : 'Someone'} has sent you a gift of cryptocurrency on the SUI blockchain (testnet)!</p>
+            <p>${params.senderName ? `<strong>${params.senderName}</strong>` : 'Someone'} has sent you a gift of cryptocurrency on the ${blockchainName}!</p>
 
             <div class="highlight">
                 <p>Amount Received:</p>
-                <p class="amount">${params.amountSent} SUI</p>
+                <p class="amount">${params.amountSent}</p>
                 <p style="color: #666;">Transaction ID: <code>${params.transactionDigest}</code></p>
             </div>
 
@@ -165,13 +170,21 @@ function createCryptoGiftEmailHTML(params: CryptoGiftEmailParams): string {
                     <strong>Save your credentials:</strong> Copy and store your private key in a secure location (password manager recommended).
                 </div>
                 <div class="step">
-                    <strong>Install a wallet:</strong> Download a SUI wallet like Sui Wallet, Ethos, or Martian from their official websites.
+                    <strong>Install a wallet:</strong> Download ${isXRP ? 'MetaMask or any Ethereum-compatible wallet' : 'a SUI wallet like Sui Wallet, Ethos, or Martian'} from their official websites.
                 </div>
                 <div class="step">
                     <strong>Import your wallet:</strong> Use your private key to import your wallet into the app.
                 </div>
+                ${isXRP ? `
                 <div class="step">
-                    <strong>Check your balance:</strong> Once imported, you'll see your ${params.amountSent} SUI balance.
+                    <strong>Add XRPL EVM Network:</strong> Add the XRPL EVM Testnet network:
+                    <br>• RPC URL: https://rpc.testnet.xrplevm.org
+                    <br>• Chain ID: 1449000
+                    <br>• Currency: XRP
+                </div>
+                ` : ''}
+                <div class="step">
+                    <strong>Check your balance:</strong> Once imported, you'll see your ${params.amountSent} balance.
                 </div>
             </div>
 
@@ -179,14 +192,22 @@ function createCryptoGiftEmailHTML(params: CryptoGiftEmailParams): string {
             <a href="${params.explorerUrl}" class="button" style="color: white;">View Transaction on Explorer</a>
 
             <div class="footer">
+                ${isXRP ? `
+                <p><strong>What is XRPL EVM?</strong><br>
+                The XRPL EVM Sidechain is an Ethereum-compatible blockchain that bridges with the XRP Ledger, enabling smart contract functionality while leveraging XRP as the native currency.</p>
+
+                <p><strong>Need help?</strong><br>
+                Visit the official XRPL documentation at <a href="https://xrpl.org">xrpl.org</a> or reach out to the person who sent you this gift.</p>
+                ` : `
                 <p><strong>What is SUI?</strong><br>
                 SUI is a next-generation blockchain platform designed for speed, security, and scalability. The tokens you received are on the testnet (test network) for experimentation and learning.</p>
 
                 <p><strong>Need help?</strong><br>
                 Visit the official SUI documentation at <a href="https://sui.io">sui.io</a> or reach out to the person who sent you this gift.</p>
+                `}
 
                 <p style="margin-top: 20px; color: #999;">
-                This is an automated message sent on behalf of ${params.senderName || 'a SUI user'}.
+                This is an automated message sent on behalf of ${params.senderName || (isXRP ? 'an XRPL user' : 'a SUI user')}.
                 Sent via Crypto Gift Service.
                 </p>
             </div>
@@ -199,15 +220,20 @@ function createCryptoGiftEmailHTML(params: CryptoGiftEmailParams): string {
 // Send crypto gift email using Mailgun
 export async function sendCryptoGiftEmail(params: CryptoGiftEmailParams): Promise<{ success: boolean; message: string; error?: any }> {
     try {
+        // Check if this is an XRP transaction
+        const isXRP = params.amountSent.includes('XRP');
+        const cryptoName = isXRP ? 'XRP from XRPL Ledger' : 'SUI Cryptocurrency';
+        const blockchainName = isXRP ? 'XRPL EVM Testnet' : 'SUI blockchain (testnet)';
+
         const messageData = {
             from: `Crypto Gift Service <mailgun@${MAILGUN_DOMAIN}>`,
             to: params.recipientEmail,
-            subject: '🎁 You\'ve Received SUI Cryptocurrency!',
+            subject: `🎁 You've Received ${cryptoName}!`,
             html: createCryptoGiftEmailHTML(params),
             text: `
-Congratulations! You've Received Cryptocurrency!
+Congratulations! You've Received ${cryptoName}!
 
-${params.senderName ? params.senderName : 'Someone'} has sent you ${params.amountSent} SUI on the SUI blockchain (testnet)!
+${params.senderName ? params.senderName : 'Someone'} has sent you ${params.amountSent} on the ${blockchainName}!
 
 YOUR WALLET CREDENTIALS (SAVE THESE SECURELY):
 ================================================
@@ -220,15 +246,19 @@ Never share your private key with anyone! It provides complete access to your wa
 
 HOW TO ACCESS YOUR FUNDS:
 1. Save your credentials in a secure location
-2. Download a SUI wallet (Sui Wallet, Ethos, or Martian)
+2. Download a wallet (${isXRP ? 'MetaMask or any Ethereum-compatible wallet' : 'Sui Wallet, Ethos, or Martian'})
 3. Import your wallet using the private key
-4. Your ${params.amountSent} SUI will be available
+4. Your ${params.amountSent} will be available
+${isXRP ? `5. Add XRPL EVM Testnet network:
+   - RPC URL: https://rpc.testnet.xrplevm.org
+   - Chain ID: 1449000
+   - Currency: XRP` : ''}
 
 View your transaction: ${params.explorerUrl}
 
 Transaction ID: ${params.transactionDigest}
 
-For more information about SUI, visit: https://sui.io
+For more information, visit: ${isXRP ? 'https://xrpl.org' : 'https://sui.io'}
 
 This is an automated message. Sent via Crypto Gift Service.
             `
