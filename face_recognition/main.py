@@ -8,6 +8,7 @@ import argparse
 import time
 from typing import Optional
 import sys
+import threading
 
 import config
 import utils
@@ -19,6 +20,8 @@ from face_tracker import FaceTracker
 from person_info import get_api_instance, PersonInfo
 from info_display import draw_person_info_box
 from gesture_detector import GestureDetector
+from speech_transcription import SpeechTranscriber
+from amount_parser import AmountParser
 
 
 class FaceRecognitionApp:
@@ -79,6 +82,27 @@ class FaceRecognitionApp:
         else:
             self.gesture_detector = None
         
+        # Initialize crypto payment handler if enabled
+        if config.ENABLE_CRYPTO_PAYMENT:
+            from crypto_payment import CryptoPaymentHandler
+            self.crypto_handler = CryptoPaymentHandler()
+            self.crypto_handler.start_server()
+            self.payment_status = None  # Track current payment state
+        else:
+            self.crypto_handler = None
+            self.payment_status = None
+        
+        # Initialize speech transcription if enabled
+        if config.ENABLE_SPEECH_TRANSCRIPTION:
+            self.speech_transcriber = SpeechTranscriber()
+            self.speech_transcriber.start()
+            self.amount_parser = AmountParser()
+            self.amount_preview = None  # Track amount preview state
+        else:
+            self.speech_transcriber = None
+            self.amount_parser = None
+            self.amount_preview = None
+        
         # Display settings
         self.display_width = display_width
         self.display_height = display_height
@@ -108,6 +132,11 @@ class FaceRecognitionApp:
             print("PERSON INFO API: Enabled - Fetching person details")
         if config.ENABLE_GESTURE_DETECTION:
             print("GESTURE DETECTION: Enabled - Detecting snaps/clicks")
+        if config.ENABLE_CRYPTO_PAYMENT:
+            print("CRYPTO PAYMENT: Enabled - Hold snap for 2s to send SUI")
+        if config.ENABLE_SPEECH_TRANSCRIPTION:
+            print("SPEECH TRANSCRIPTION: Enabled - Say amount before snap")
+            print("  Example: 'send 0.5 SUI' then hold snap gesture")
         print("=" * 60)
     
     def run(self) -> None:
@@ -171,6 +200,66 @@ class FaceRecognitionApp:
                 gesture_events = []
                 if self.gesture_detector:
                     gesture_events, frame = self.gesture_detector.detect_gestures(frame)
+                    
+                    # Check for payment trigger
+                    if config.ENABLE_CRYPTO_PAYMENT and self.crypto_handler:
+                        for event in gesture_events:
+                            if event.gesture_type == "snap":
+                                hand_id = f"{event.hand_label}_0"
+                                
+                                # Show amount preview during hold
+                                if event.hold_duration >= 1.5 and event.hold_duration < config.PAYMENT_HOLD_DURATION:
+                                    if not self.amount_preview:
+                                        # Parse amount from recent transcription
+                                        if self.speech_transcriber and self.amount_parser:
+                                            recent_text = self.speech_transcriber.get_recent_transcription()
+                                            parsed_amount = self.amount_parser.parse_amount(recent_text)
+                                            is_valid, validated_amount, message = self.amount_parser.validate_amount(parsed_amount)
+                                            
+                                            if is_valid:
+                                                self.amount_preview = {
+                                                    'amount_sui': validated_amount,
+                                                    'message': message,
+                                                    'timestamp': time.time(),
+                                                    'state': 'preview'
+                                                }
+                                                print(f"💰 {message}")
+                                            else:
+                                                print(f"⚠️  {message}")
+                                        else:
+                                            # No transcription, use default
+                                            self.amount_preview = {
+                                                'amount_sui': config.DEFAULT_PAYMENT_AMOUNT_SUI,
+                                                'message': f'Using default: {config.DEFAULT_PAYMENT_AMOUNT_SUI} SUI',
+                                                'timestamp': time.time(),
+                                                'state': 'preview'
+                                            }
+                                
+                                # Check if held for required duration and not already triggered
+                                if (event.hold_duration >= config.PAYMENT_HOLD_DURATION and
+                                    hand_id in self.gesture_detector.gesture_states and
+                                    not self.gesture_detector.gesture_states[hand_id]['payment_triggered'] and
+                                    self.crypto_handler.can_send_payment()):
+                                    
+                                    # Mark as triggered to prevent repeat
+                                    self.gesture_detector.gesture_states[hand_id]['payment_triggered'] = True
+                                    
+                                    # Get the amount to send
+                                    if self.amount_preview and 'amount_sui' in self.amount_preview:
+                                        amount_sui = self.amount_preview['amount_sui']
+                                    else:
+                                        amount_sui = config.DEFAULT_PAYMENT_AMOUNT_SUI
+                                    
+                                    # Convert to MIST
+                                    amount_mist = self.amount_parser.amount_to_mist(amount_sui) if self.amount_parser else int(amount_sui * 1_000_000_000)
+                                    
+                                    # Send payment in background thread
+                                    print(f"\n💰 Payment triggered by {event.hold_duration:.1f}s snap hold!")
+                                    print(f"💸 Sending {amount_sui} SUI ({amount_mist} MIST)")
+                                    threading.Thread(target=self._send_payment_async, args=(amount_mist,), daemon=True).start()
+                                    
+                                    # Clear amount preview
+                                    self.amount_preview = None
                 
                 # Log events
                 if config.LOG_DETECTIONS or config.LOG_RECOGNITIONS:
@@ -198,6 +287,14 @@ class FaceRecognitionApp:
                 # Draw FPS if enabled
                 if config.SHOW_FPS:
                     display_frame = utils.draw_fps(display_frame, self.fps)
+                
+                # Draw transcription overlay if enabled
+                if config.ENABLE_SPEECH_TRANSCRIPTION and self.speech_transcriber:
+                    display_frame = self._draw_transcription_overlay(display_frame)
+                
+                # Draw amount preview if active
+                if self.amount_preview:
+                    display_frame = self._draw_amount_preview(display_frame)
                 
                 # Resize for display
                 if (display_frame.shape[1] != self.display_width or
@@ -290,6 +387,10 @@ class FaceRecognitionApp:
                         # Silently handle display errors
                         pass
         
+        # Draw payment status overlay if enabled
+        if config.ENABLE_CRYPTO_PAYMENT and self.payment_status:
+            frame = self._draw_payment_overlay(frame)
+        
         return frame
     
     def _save_faces(self, frame, face_locations, face_names):
@@ -331,6 +432,295 @@ class FaceRecognitionApp:
         self.face_engine.reset_frame_cache()
         print("Database rebuilt successfully")
     
+    def _send_payment_async(self, amount_mist: int = None):
+        """Send crypto payment asynchronously (runs in background thread).
+        
+        Args:
+            amount_mist: Amount to send in MIST (default: config value)
+        """
+        try:
+            # Convert to SUI for display
+            amount_sui = amount_mist / 1_000_000_000 if amount_mist else config.DEFAULT_PAYMENT_AMOUNT_SUI
+            
+            # Set sending status
+            self.payment_status = {
+                "state": "sending",
+                "message": f"Sending {amount_sui} SUI...",
+                "timestamp": time.time()
+            }
+            
+            # Send the payment
+            result = self.crypto_handler.send_payment(amount_mist)
+            
+            if result['success']:
+                # Payment successful
+                recipient_addr = result.get('recipientAddress', 'N/A')
+                self.payment_status = {
+                    "state": "success",
+                    "message": f"Sent {amount_sui} SUI!",
+                    "digest": result.get('transactionDigest', 'N/A'),
+                    "explorerUrl": result.get('explorerUrl', ''),
+                    "recipientAddress": recipient_addr,
+                    "timestamp": time.time()
+                }
+                print(f"\n✅ Crypto gift successful!")
+                print(f"   Transaction: {result.get('transactionDigest', 'N/A')}")
+                print(f"   New wallet: {recipient_addr[:20]}..." if len(recipient_addr) > 20 else recipient_addr)
+            else:
+                # Payment failed
+                error_msg = result.get('message', 'Unknown error')
+                self.payment_status = {
+                    "state": "failure",
+                    "message": f"Payment failed: {error_msg}",
+                    "timestamp": time.time()
+                }
+                print(f"\n❌ Payment failed: {error_msg}")
+        
+        except Exception as e:
+            print(f"\n❌ Payment error: {e}")
+            self.payment_status = {
+                "state": "failure",
+                "message": f"Error: {str(e)}",
+                "timestamp": time.time()
+            }
+    
+    def _draw_payment_overlay(self, frame):
+        """Draw payment status overlay at top center of frame."""
+        state = self.payment_status['state']
+        message = self.payment_status['message']
+        
+        # Auto-clear success/failure after configured duration
+        if state in ['success', 'failure']:
+            if time.time() - self.payment_status['timestamp'] > config.PAYMENT_DISPLAY_DURATION:
+                self.payment_status = None
+                return frame
+        
+        # Choose color based on state
+        color_map = {
+            'sending': config.PAYMENT_TEXT_COLOR,
+            'success': config.PAYMENT_SUCCESS_COLOR,
+            'failure': config.PAYMENT_FAILURE_COLOR
+        }
+        color = color_map.get(state, config.PAYMENT_TEXT_COLOR)
+        
+        # Get frame dimensions
+        h, w = frame.shape[:2]
+        
+        # Calculate text size for the message
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = config.PAYMENT_TEXT_SIZE
+        thickness = 2
+        
+        # Get text dimensions
+        (text_width, text_height), baseline = cv2.getTextSize(
+            message, font, font_scale, thickness
+        )
+        
+        # Calculate position (top center)
+        padding = 20
+        box_x = (w - text_width) // 2 - padding
+        box_y = 20
+        box_width = text_width + padding * 2
+        box_height = text_height + padding * 2
+        
+        # Draw semi-transparent background
+        overlay = frame.copy()
+        cv2.rectangle(
+            overlay,
+            (box_x, box_y),
+            (box_x + box_width, box_y + box_height),
+            (40, 40, 40),
+            -1
+        )
+        
+        # Blend overlay
+        alpha = config.PAYMENT_OVERLAY_ALPHA
+        frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+        
+        # Draw border
+        cv2.rectangle(
+            frame,
+            (box_x, box_y),
+            (box_x + box_width, box_y + box_height),
+            color,
+            2
+        )
+        
+        # Draw message text
+        text_x = box_x + padding
+        text_y = box_y + padding + text_height
+        cv2.putText(
+            frame,
+            message,
+            (text_x, text_y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA
+        )
+        
+        # For success, add transaction digest below (smaller font)
+        if state == 'success' and 'digest' in self.payment_status:
+            digest = self.payment_status['digest']
+            if len(digest) > 20:
+                digest_short = f"{digest[:10]}...{digest[-10:]}"
+            else:
+                digest_short = digest
+            
+            small_font_scale = font_scale * 0.5
+            small_thickness = 1
+            
+            cv2.putText(
+                frame,
+                digest_short,
+                (text_x, text_y + 25),
+                font,
+                small_font_scale,
+                (200, 200, 200),
+                small_thickness,
+                cv2.LINE_AA
+            )
+        
+        return frame
+    
+    def _draw_transcription_overlay(self, frame):
+        """Draw transcription text at bottom center of frame."""
+        if not self.speech_transcriber or not self.speech_transcriber.is_ready():
+            return frame
+        
+        # Get latest transcription
+        transcription = self.speech_transcriber.get_latest_transcription()
+        if not transcription or not transcription.strip():
+            return frame
+        
+        # Get frame dimensions
+        h, w = frame.shape[:2]
+        
+        # Prepare text
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = config.TRANSCRIPTION_FONT_SCALE
+        thickness = 1
+        color = config.TRANSCRIPTION_TEXT_COLOR
+        
+        # Truncate if too long
+        max_chars = 100
+        if len(transcription) > max_chars:
+            transcription = transcription[-max_chars:]
+        
+        # Get text dimensions
+        (text_width, text_height), baseline = cv2.getTextSize(
+            transcription, font, font_scale, thickness
+        )
+        
+        # Calculate position (bottom center)
+        padding = 10
+        text_x = (w - text_width) // 2
+        text_y = h - padding - 5
+        
+        # Draw semi-transparent background
+        overlay = frame.copy()
+        bg_x1 = text_x - padding
+        bg_y1 = text_y - text_height - padding
+        bg_x2 = text_x + text_width + padding
+        bg_y2 = text_y + baseline + padding
+        
+        cv2.rectangle(
+            overlay,
+            (max(0, bg_x1), max(0, bg_y1)),
+            (min(w, bg_x2), min(h, bg_y2)),
+            (40, 40, 40),
+            -1
+        )
+        
+        # Blend overlay
+        alpha = 0.7
+        frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+        
+        # Draw text
+        cv2.putText(
+            frame,
+            transcription,
+            (text_x, text_y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA
+        )
+        
+        return frame
+    
+    def _draw_amount_preview(self, frame):
+        """Draw amount preview at top right of frame."""
+        if not self.amount_preview:
+            return frame
+        
+        amount_sui = self.amount_preview.get('amount_sui', 0)
+        state = self.amount_preview.get('state', 'preview')
+        
+        # Get frame dimensions
+        h, w = frame.shape[:2]
+        
+        # Prepare text
+        text = f"Sending: {amount_sui} SUI"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = config.AMOUNT_FONT_SCALE
+        thickness = 2
+        color = config.AMOUNT_TEXT_COLOR
+        
+        # Get text dimensions
+        (text_width, text_height), baseline = cv2.getTextSize(
+            text, font, font_scale, thickness
+        )
+        
+        # Calculate position (top right)
+        padding = 20
+        text_x = w - text_width - padding
+        text_y = padding + text_height
+        
+        # Draw semi-transparent background
+        overlay = frame.copy()
+        bg_x1 = text_x - padding
+        bg_y1 = text_y - text_height - padding
+        bg_x2 = text_x + text_width + padding
+        bg_y2 = text_y + baseline + padding
+        
+        cv2.rectangle(
+            overlay,
+            (bg_x1, bg_y1),
+            (bg_x2, bg_y2),
+            (40, 40, 40),
+            -1
+        )
+        
+        # Blend overlay
+        alpha = 0.85
+        frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+        
+        # Draw border
+        cv2.rectangle(
+            frame,
+            (bg_x1, bg_y1),
+            (bg_x2, bg_y2),
+            color,
+            2
+        )
+        
+        # Draw text
+        cv2.putText(
+            frame,
+            text,
+            (text_x, text_y),
+            font,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA
+        )
+        
+        return frame
+    
     def _cleanup(self):
         """Clean up resources."""
         print("\nCleaning up...")
@@ -348,6 +738,25 @@ class FaceRecognitionApp:
         # Close gesture detector if enabled
         if self.gesture_detector:
             self.gesture_detector.close()
+        
+        # Stop crypto server if enabled
+        if self.crypto_handler:
+            # Print transaction statistics
+            try:
+                stats = self.crypto_handler.get_transaction_stats()
+                total = stats['total_sent']
+                if total['sui'] > 0:
+                    print("\n=== Transaction Statistics ===")
+                    print(f"Total sent: {total['sui']:.6f} SUI ({total['mist']} MIST)")
+                    print(f"Transaction log: {config.LOGS_DIR}/transactions.csv")
+            except Exception as e:
+                pass
+            
+            self.crypto_handler.stop_server()
+        
+        # Stop speech transcription if enabled
+        if self.speech_transcriber:
+            self.speech_transcriber.stop()
         
         cv2.destroyAllWindows()
         print("Application closed")

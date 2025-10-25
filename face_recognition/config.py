@@ -95,6 +95,50 @@ GESTURE_BOX_THICKNESS = 3  # Box line thickness
 SHOW_HAND_LANDMARKS = False  # Show all 21 hand landmarks (debug mode)
 GESTURE_LABEL_TEXT = "SNAP!"  # Text to display when gesture detected
 
+# Crypto payment settings
+ENABLE_CRYPTO_PAYMENT = True  # Enable crypto payments on snap gesture
+CRYPTO_SERVER_PATH = "../crypto-stuff"  # Path to crypto server directory
+PAYMENT_HOLD_DURATION = 2.0  # Seconds to hold snap before payment triggers
+PAYMENT_COOLDOWN = 30.0  # Seconds between payments (prevents accidental double-sends)
+PAYMENT_AMOUNT_MIST = 100000  # 0.0001 SUI (1 SUI = 1,000,000,000 MIST)
+
+# Wallet configuration (from send-from-funded.ts)
+FUNDED_WALLET_PRIVATE_KEY = "suiprivkey1qrdkvfpf9ksrsh8pwayg6n8vgk5n89087fy05u9uavvwsd6egv5ezxt843t"
+RECIPIENT_WALLET_ADDRESS = "0xbf8ba70997c705101fa3bbd478a6c87e884a34196408a08c40d90f0b5ae59511"
+
+# Gift crypto settings (generates new wallets for recipients)
+RECIPIENT_EMAIL = "sanjay.amirthraj@gmail.com"  # Email to send crypto gift credentials
+SENDER_NAME = "Face Recognition Payment System"  # Name shown in gift email
+
+# Payment visual feedback settings
+PAYMENT_OVERLAY_POSITION = "top_center"  # Position on screen
+PAYMENT_TEXT_COLOR = (0, 255, 255)  # Yellow text (BGR)
+PAYMENT_SUCCESS_COLOR = (0, 255, 0)  # Green for success (BGR)
+PAYMENT_FAILURE_COLOR = (0, 0, 255)  # Red for failure (BGR)
+PAYMENT_OVERLAY_ALPHA = 0.8  # Background transparency
+PAYMENT_TEXT_SIZE = 1.0  # Font scale
+PAYMENT_DISPLAY_DURATION = 5.0  # Seconds to show success/failure message
+
+# Speech transcription settings
+ENABLE_SPEECH_TRANSCRIPTION = True
+DEEPGRAM_API_KEY = "b6dd69dddfa27a355aa91f7b1c7688c7c8805f72"
+TRANSCRIPTION_BUFFER_SECONDS = 10
+AUDIO_SAMPLE_RATE = 16000
+AUDIO_CHANNELS = 1
+
+# Amount parsing settings  
+OLLAMA_MODEL = "llama3.2"
+DEFAULT_PAYMENT_AMOUNT_SUI = 0.0001
+AMOUNT_DISPLAY_DURATION = 2.0
+
+# Transcription display settings
+TRANSCRIPTION_TEXT_COLOR = (200, 200, 200)  # Light gray (BGR)
+TRANSCRIPTION_FONT_SCALE = 0.4
+TRANSCRIPTION_POSITION = "bottom_center"
+AMOUNT_DISPLAY_POSITION = "top_right"
+AMOUNT_TEXT_COLOR = (0, 255, 255)  # Yellow (BGR)
+AMOUNT_FONT_SCALE = 0.7
+
 # Stream types
 STREAM_TYPE_WEBCAM = "webcam"
 STREAM_TYPE_EXTERNAL = "external"

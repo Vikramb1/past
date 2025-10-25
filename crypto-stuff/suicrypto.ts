@@ -1,5 +1,4 @@
-const express = require('express');
-import { Request, Response } from 'express';
+import express, { Request, Response } from 'express';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
 import { Transaction } from '@mysten/sui/transactions';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';

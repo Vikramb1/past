@@ -14,7 +14,7 @@ class GestureEvent:
     """Represents a detected gesture event."""
     
     def __init__(self, gesture_type: str, hand_bbox: Tuple[int, int, int, int], 
-                 confidence: float, hand_label: str):
+                 confidence: float, hand_label: str, hold_duration: float = 0.0):
         """
         Initialize gesture event.
         
@@ -23,11 +23,13 @@ class GestureEvent:
             hand_bbox: Hand bounding box (x, y, width, height)
             confidence: Gesture confidence (0.0-1.0)
             hand_label: "Left" or "Right"
+            hold_duration: Duration in seconds gesture has been held
         """
         self.gesture_type = gesture_type
         self.hand_bbox = hand_bbox
         self.confidence = confidence
         self.hand_label = hand_label
+        self.hold_duration = hold_duration
         self.timestamp = time.time()
 
 
@@ -87,7 +89,7 @@ class GestureDetector:
                 hand_bbox = self._get_hand_bbox(hand_landmarks, frame.shape)
                 
                 # Detect snap gesture
-                is_snap, confidence = self._detect_snap(
+                is_snap, confidence, hold_duration = self._detect_snap(
                     hand_landmarks, 
                     hand_id,
                     frame.shape
@@ -99,7 +101,8 @@ class GestureDetector:
                         gesture_type="snap",
                         hand_bbox=hand_bbox,
                         confidence=confidence,
-                        hand_label=hand_label
+                        hand_label=hand_label,
+                        hold_duration=hold_duration
                     )
                     gesture_events.append(gesture_event)
                     
@@ -161,7 +164,7 @@ class GestureDetector:
         hand_landmarks,
         hand_id: str,
         frame_shape: Tuple[int, int, int]
-    ) -> Tuple[bool, float]:
+    ) -> Tuple[bool, float, float]:
         """
         Detect snap gesture by identifying the crossed X shape formed by 
         thumb and index finger after a snap.
@@ -172,7 +175,7 @@ class GestureDetector:
             frame_shape: Frame dimensions
         
         Returns:
-            Tuple of (is_snap_detected, confidence)
+            Tuple of (is_snap_detected, confidence, hold_duration)
         """
         h, w, _ = frame_shape
         
@@ -195,7 +198,8 @@ class GestureDetector:
             self.gesture_states[hand_id] = {
                 'active': False,
                 'start_time': 0,
-                'last_print_time': 0
+                'last_print_time': 0,
+                'payment_triggered': False  # Track if payment sent this hold
             }
         
         # Check if thumb and index are in snap position
@@ -234,6 +238,7 @@ class GestureDetector:
                 state['active'] = True
                 state['start_time'] = current_time
                 state['last_print_time'] = current_time
+                state['payment_triggered'] = False  # Reset payment trigger
                 print(f"SNAP detected! Hand: {hand_id}, Confidence: {confidence:.2f}, "
                       f"Angle: {angle_degrees:.1f}°, Distance: {thumb_index_distance:.1f}px")
             else:
@@ -243,7 +248,9 @@ class GestureDetector:
                     duration = current_time - state['start_time']
                     print(f"SNAP held for {duration:.1f}s, Confidence: {confidence:.2f}")
             
-            return True, confidence
+            # Calculate hold duration
+            hold_duration = current_time - state['start_time']
+            return True, confidence, hold_duration
         else:
             # Not in snap position
             if state['active']:
@@ -251,8 +258,9 @@ class GestureDetector:
                 duration = current_time - state['start_time']
                 print(f"SNAP released after {duration:.1f}s")
                 state['active'] = False
+                state['payment_triggered'] = False  # Reset on release
             
-            return False, 0.0
+            return False, 0.0, 0.0
     
     def _draw_gesture(
         self,
