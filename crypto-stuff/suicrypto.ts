@@ -1,3 +1,9 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load environment variables from .env file
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 const express = require('express');
 import { Request, Response } from 'express';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
@@ -5,6 +11,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { fromB64, toB64 } from '@mysten/sui/utils';
 import { getFaucetHost, requestSuiFromFaucetV1 } from '@mysten/sui/faucet';
+import { sendCryptoGiftEmail, verifyEmailConfig } from './emailService';
 
 // Configuration for testnet
 const NETWORK = "testnet";
@@ -370,6 +377,201 @@ app.get('/verify/:digest', async (req: Request, res: Response) => {
     }
 });
 
+// Test email endpoint - generates keypair and sends test email without transaction
+app.post('/test-email', async (req: Request, res: Response) => {
+    try {
+        const { recipientEmail, senderName } = req.body;
+
+        // Use default email if none provided
+        const emailToUse = recipientEmail || 'sanjay.amirthraj@gmail.com';
+
+        // Generate new keypair for testing
+        console.log('Generating test keypair...');
+        const testKeypair = new Ed25519Keypair();
+
+        const privateKeyBytes = testKeypair.getSecretKey();
+        const publicKeyBytes = testKeypair.getPublicKey().toRawBytes();
+        const suiAddress = testKeypair.getPublicKey().toSuiAddress();
+
+        const privateKeyB64 = toB64(new Uint8Array(Buffer.from(privateKeyBytes.replace('0x', ''), 'hex')));
+        const publicKeyHex = toHexString(publicKeyBytes);
+
+        console.log(`Generated test address: ${suiAddress}`);
+
+        // Prepare email parameters with test transaction details
+        const emailParams = {
+            recipientEmail: emailToUse,
+            publicKey: publicKeyHex,
+            privateKey: privateKeyBytes,
+            suiAddress: suiAddress,
+            amountSent: "0.001000",
+            transactionDigest: "TEST_TRANSACTION_" + Date.now(),
+            explorerUrl: `https://testnet.suivision.xyz/account/${suiAddress}`,
+            senderName: senderName || "Test Sender"
+        };
+
+        // Send test email
+        console.log(`Sending test email to ${emailToUse}...`);
+        const emailResult = await sendCryptoGiftEmail(emailParams);
+
+        res.json({
+            success: true,
+            message: 'Test email functionality',
+            keypair: {
+                address: suiAddress,
+                publicKey: publicKeyHex,
+                privateKey: privateKeyBytes,
+                privateKeyBase64: privateKeyB64
+            },
+            email: {
+                sent: emailResult.success,
+                to: emailToUse,
+                message: emailResult.message,
+                error: emailResult.error
+            },
+            note: 'This is a TEST - no actual crypto was sent'
+        });
+
+    } catch (error: any) {
+        console.error('Error in test-email:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to test email',
+            details: error.message
+        });
+    }
+});
+
+// Gift crypto endpoint - generates new keypair for recipient and sends them the keys via email
+app.post('/gift-crypto', async (req: Request, res: Response) => {
+    try {
+        const {
+            senderPrivateKey,
+            recipientEmail,
+            amount,
+            senderName
+        } = req.body;
+
+        // Use default email if none provided
+        const emailToUse = recipientEmail || 'sanjay.amirthraj@gmail.com';
+
+        // Validate sender's private key
+        if (!senderPrivateKey) {
+            return res.status(400).json({
+                error: 'Sender private key is required',
+                message: 'Please provide the private key to send from'
+            });
+        }
+
+        // Parse sender's keypair
+        let senderKeypair: Ed25519Keypair;
+        try {
+            if (senderPrivateKey.startsWith('0x')) {
+                const secretKeyBytes = Buffer.from(senderPrivateKey.replace('0x', ''), 'hex');
+                senderKeypair = Ed25519Keypair.fromSecretKey(secretKeyBytes);
+            } else if (senderPrivateKey.startsWith('suiprivkey')) {
+                senderKeypair = Ed25519Keypair.fromSecretKey(senderPrivateKey);
+            } else {
+                const secretKeyBytes = fromB64(senderPrivateKey);
+                senderKeypair = Ed25519Keypair.fromSecretKey(secretKeyBytes);
+            }
+        } catch (keyError) {
+            return res.status(400).json({
+                error: 'Invalid sender private key format',
+                message: 'Private key must be in hex (0x...), base64, or bech32 (suiprivkey...) format'
+            });
+        }
+
+        // Generate new keypair for recipient
+        console.log('Generating new keypair for recipient...');
+        const recipientKeypair = new Ed25519Keypair();
+
+        const recipientPrivateKeyBytes = recipientKeypair.getSecretKey();
+        const recipientPublicKeyBytes = recipientKeypair.getPublicKey().toRawBytes();
+        const recipientSuiAddress = recipientKeypair.getPublicKey().toSuiAddress();
+
+        const recipientPrivateKeyB64 = toB64(new Uint8Array(Buffer.from(recipientPrivateKeyBytes.replace('0x', ''), 'hex')));
+        const recipientPublicKeyHex = toHexString(recipientPublicKeyBytes);
+
+        console.log(`Generated new address for recipient: ${recipientSuiAddress}`);
+
+        // Send SUI to the new address
+        const finalAmount = amount || AMOUNT_TO_SEND;
+        console.log(`Sending ${(finalAmount / 1_000_000_000).toFixed(6)} SUI to recipient...`);
+
+        const sendResult = await sendSui(senderKeypair, recipientSuiAddress, finalAmount);
+
+        if (!sendResult.success) {
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to send SUI to recipient',
+                details: sendResult.error,
+                message: sendResult.message
+            });
+        }
+
+        // Prepare email parameters
+        const emailParams = {
+            recipientEmail: emailToUse,
+            publicKey: recipientPublicKeyHex,
+            privateKey: recipientPrivateKeyBytes,
+            suiAddress: recipientSuiAddress,
+            amountSent: (finalAmount / 1_000_000_000).toFixed(6),
+            transactionDigest: sendResult.transactionDigest || '',
+            explorerUrl: sendResult.explorerUrl || `https://testnet.suivision.xyz/txblock/${sendResult.transactionDigest}`,
+            senderName: senderName || undefined
+        };
+
+        // Send email with the keypair information
+        console.log(`Sending email to ${emailToUse}...`);
+        const emailResult = await sendCryptoGiftEmail(emailParams);
+
+        // Check final balance of the new address
+        const recipientBalance = await checkBalance(recipientSuiAddress);
+
+        // Return comprehensive response
+        res.json({
+            success: true,
+            message: `Successfully sent ${(finalAmount / 1_000_000_000).toFixed(6)} SUI as a gift!`,
+            transaction: {
+                digest: sendResult.transactionDigest,
+                from: sendResult.senderAddress,
+                to: recipientSuiAddress,
+                amount: finalAmount,
+                amountInSUI: (finalAmount / 1_000_000_000).toFixed(6),
+                explorerUrl: sendResult.explorerUrl,
+                verified: sendResult.verified,
+                gasUsed: sendResult.gasUsed
+            },
+            recipient: {
+                address: recipientSuiAddress,
+                publicKey: recipientPublicKeyHex,
+                privateKey: recipientPrivateKeyBytes,
+                privateKeyBase64: recipientPrivateKeyB64,
+                balance: recipientBalance || { totalBalance: '0', balanceInSUI: '0' }
+            },
+            email: {
+                sent: emailResult.success,
+                to: emailToUse,
+                message: emailResult.message,
+                error: emailResult.error
+            },
+            network: NETWORK,
+            instructions: emailResult.success
+                ? `The recipient has been emailed their wallet credentials at ${emailToUse}. They can now access their ${(finalAmount / 1_000_000_000).toFixed(6)} SUI!`
+                : `Email failed to send. Please manually share these credentials with the recipient:\nAddress: ${recipientSuiAddress}\nPrivate Key: ${recipientPrivateKeyBytes}`
+        });
+
+    } catch (error: any) {
+        console.error('Error in gift-crypto:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to complete crypto gift',
+            details: error.message
+        });
+    }
+});
+
 // Add a root endpoint with API documentation
 app.get('/', (req: Request, res: Response) => {
     res.json({
@@ -379,6 +581,7 @@ app.get('/', (req: Request, res: Response) => {
             "GET /": "API documentation",
             "GET /generate-keypair": "Generate a new SUI keypair",
             "POST /send-sui": "Send SUI tokens (requires privateKey, recipientAddress, and optional amount in request body)",
+            "POST /gift-crypto": "Gift crypto to someone by generating a new wallet and emailing them the keys",
             "GET /balance/:address": "Check balance of a SUI address",
             "POST /faucet": "Request test SUI from faucet (requires address in request body)",
             "GET /verify/:digest": "Verify a transaction by its digest"
@@ -391,6 +594,16 @@ app.get('/', (req: Request, res: Response) => {
                     privateKey: "0x... or base64 or suiprivkey...",
                     recipientAddress: "0x...",
                     amount: 1000000
+                }
+            },
+            giftCrypto: {
+                method: "POST",
+                endpoint: "/gift-crypto",
+                body: {
+                    senderPrivateKey: "0x... or base64 or suiprivkey...",
+                    recipientEmail: "recipient@email.com (defaults to sanjay.amirthraj@gmail.com if not provided)",
+                    amount: 1000000,
+                    senderName: "Your Name (optional)"
                 }
             },
             faucet: {
@@ -415,8 +628,19 @@ app.listen(PORT, () => {
     console.log(`  GET  http://localhost:${PORT}/                    - API documentation`);
     console.log(`  GET  http://localhost:${PORT}/generate-keypair    - Generate new keypair`);
     console.log(`  POST http://localhost:${PORT}/send-sui            - Send SUI tokens`);
+    console.log(`  POST http://localhost:${PORT}/gift-crypto         - Gift crypto with email notification`);
     console.log(`  GET  http://localhost:${PORT}/balance/:address    - Check balance`);
     console.log(`  POST http://localhost:${PORT}/faucet              - Request test SUI`);
     console.log(`  GET  http://localhost:${PORT}/verify/:digest      - Verify transaction`);
     console.log(`================================\n`);
+
+    // Check email configuration on startup
+    verifyEmailConfig().then(isValid => {
+        if (!isValid) {
+            console.log('⚠️  Email configuration not set. Please configure EMAIL_USER and EMAIL_PASSWORD environment variables.');
+            console.log('   For Gmail: Use an app-specific password, not your regular password.');
+        } else {
+            console.log('✅ Email service configured and ready.');
+        }
+    });
 });
