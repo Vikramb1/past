@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "people-mcp": {
+      "command": "node",
+      "args": ["/Users/sanjayamirthraj/Desktop/projects/palantirasaservice/past/people-mcp/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
