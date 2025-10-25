@@ -57,7 +57,12 @@ SAVE_FACE_SIZE = (200, 200)  # Size to save face crops
 
 # Face tracking settings (auto-save detected faces)
 AUTO_SAVE_DETECTED_FACES = True  # Automatically save all detected faces
-DUPLICATE_THRESHOLD = 0.6  # Face distance threshold for duplicate detection (lower = stricter)
+DUPLICATE_THRESHOLD = 0.4  # Face distance threshold for duplicate detection (lower = stricter)
+
+# Face quality settings (prevent blurry faces)
+ENABLE_QUALITY_CHECK = True  # Only save sharp, non-blurry faces
+QUALITY_FRAMES_TO_COLLECT = 5  # Number of frames to collect before selecting best
+QUALITY_SHARPNESS_THRESHOLD = 100.0  # Minimum sharpness score (100 = balanced)
 
 # Person information API settings
 ENABLE_PERSON_INFO_API = True  # Fetch and display person information

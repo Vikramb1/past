@@ -135,7 +135,8 @@ class FaceEngine:
                     face_encoding,
                     face_location
                 )
-                tracked_ids.append(person_id)
+                # Handle None when collecting frames for quality check
+                tracked_ids.append(person_id if person_id is not None else "")
         else:
             tracked_ids = [""] * len(face_encodings)
         
