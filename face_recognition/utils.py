@@ -127,6 +127,109 @@ def draw_fps(frame: np.ndarray, fps: float) -> np.ndarray:
     return frame
 
 
+def draw_saved_face_thumbnail(
+    frame: np.ndarray,
+    face_location: Tuple[int, int, int, int],
+    saved_image_path: Optional[str] = None,
+    thumbnail_size: int = 120,
+    position: str = "top_left",
+    padding: int = 10
+) -> np.ndarray:
+    """
+    Draw the saved face image from detected_faces folder as a thumbnail.
+    
+    Args:
+        frame: Image frame (BGR)
+        face_location: Face bounding box (top, right, bottom, left)
+        saved_image_path: Path to saved face image in detected_faces folder
+        thumbnail_size: Size of the thumbnail (square)
+        position: Position relative to face ("top_left", "top_right", "bottom_left", "bottom_right")
+        padding: Padding from face box
+    
+    Returns:
+        Frame with thumbnail drawn
+    """
+    # If no saved image path provided, return frame unchanged
+    if not saved_image_path or not os.path.exists(saved_image_path):
+        return frame
+    
+    top, right, bottom, left = face_location
+    
+    # Load the saved face image
+    try:
+        saved_face = cv2.imread(saved_image_path)
+        if saved_face is None or saved_face.size == 0:
+            return frame
+    except Exception as e:
+        print(f"Error loading saved face image: {e}")
+        return frame
+    
+    # Resize to thumbnail size (maintaining aspect ratio)
+    h, w = saved_face.shape[:2]
+    if h > w:
+        new_h = thumbnail_size
+        new_w = int(w * (thumbnail_size / h))
+    else:
+        new_w = thumbnail_size
+        new_h = int(h * (thumbnail_size / w))
+    
+    thumbnail = cv2.resize(saved_face, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    
+    # Create a square canvas
+    canvas = np.zeros((thumbnail_size, thumbnail_size, 3), dtype=np.uint8)
+    canvas.fill(40)  # Dark gray background
+    
+    # Center thumbnail on canvas
+    y_offset = (thumbnail_size - new_h) // 2
+    x_offset = (thumbnail_size - new_w) // 2
+    canvas[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = thumbnail
+    
+    # Calculate position for thumbnail
+    frame_h, frame_w = frame.shape[:2]
+    
+    if position == "top_left":
+        thumb_x = left - thumbnail_size - padding
+        thumb_y = top
+    elif position == "top_right":
+        thumb_x = right + padding
+        thumb_y = top
+    elif position == "bottom_left":
+        thumb_x = left - thumbnail_size - padding
+        thumb_y = bottom - thumbnail_size
+    else:  # bottom_right
+        thumb_x = right + padding
+        thumb_y = bottom - thumbnail_size
+    
+    # Ensure thumbnail fits on frame
+    if thumb_x < 0:
+        thumb_x = right + padding  # Try right side
+    if thumb_x + thumbnail_size > frame_w:
+        thumb_x = left - thumbnail_size - padding  # Try left side
+    if thumb_y < 0:
+        thumb_y = 0
+    if thumb_y + thumbnail_size > frame_h:
+        thumb_y = frame_h - thumbnail_size
+    
+    # Ensure still in bounds
+    thumb_x = max(0, min(thumb_x, frame_w - thumbnail_size))
+    thumb_y = max(0, min(thumb_y, frame_h - thumbnail_size))
+    
+    # Draw border around thumbnail
+    border_color = (100, 100, 100)  # Gray
+    cv2.rectangle(
+        frame,
+        (thumb_x - 2, thumb_y - 2),
+        (thumb_x + thumbnail_size + 2, thumb_y + thumbnail_size + 2),
+        border_color,
+        2
+    )
+    
+    # Overlay thumbnail on frame
+    frame[thumb_y:thumb_y+thumbnail_size, thumb_x:thumb_x+thumbnail_size] = canvas
+    
+    return frame
+
+
 def crop_face(frame: np.ndarray, top: int, right: int, bottom: int, left: int) -> np.ndarray:
     """
     Crop a face from a frame with some padding.
