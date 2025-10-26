@@ -19,7 +19,7 @@ class StreamHandler:
         Initialize the stream handler.
         
         Args:
-            stream_type: Type of stream (webcam, external, network)
+            stream_type: Type of stream (webcam, external, network, camera)
             source: Camera index for webcam/external, URL for network stream
         """
         self.stream_type = stream_type
@@ -33,10 +33,34 @@ class StreamHandler:
                 self.source = config.DEFAULT_CAMERA_INDEX
             elif stream_type == config.STREAM_TYPE_EXTERNAL:
                 self.source = config.EXTERNAL_CAMERA_INDEX
-            else:
+            elif stream_type == config.STREAM_TYPE_CAMERA:
+                # Camera search will be handled in _initialize_stream
+                self.source = None
+            elif stream_type == config.STREAM_TYPE_NETWORK:
                 raise ValueError(f"Source must be specified for stream type: {stream_type}")
         
         self._initialize_stream()
+    
+    def _find_camera(self, max_idx: int = 6, skip_indices: list = [0, 1]) -> Optional[int]:
+        """
+        Search for first available camera, skipping specified indices.
+        
+        Args:
+            max_idx: Maximum camera index to search
+            skip_indices: Camera indices to skip (e.g., built-in cameras)
+        
+        Returns:
+            Camera index if found, None otherwise
+        """
+        for i in range(max_idx):
+            if i in skip_indices:
+                continue
+            cap = cv2.VideoCapture(i, cv2.CAP_ANY)
+            if cap.isOpened():
+                cap.release()
+                print(f"Found camera at index {i}")
+                return i
+        return None
     
     def _initialize_stream(self) -> bool:
         """
@@ -46,6 +70,16 @@ class StreamHandler:
             True if successful, False otherwise
         """
         try:
+            # Handle camera type with search and fallback
+            if self.stream_type == config.STREAM_TYPE_CAMERA:
+                camera_idx = self._find_camera()
+                if camera_idx is not None:
+                    self.source = camera_idx
+                    print(f"Using external camera at index {camera_idx}")
+                else:
+                    self.source = config.DEFAULT_CAMERA_INDEX
+                    print(f"No external camera found, falling back to MacBook camera (index {self.source})")
+            
             self.capture = cv2.VideoCapture(self.source)
             
             # Configure camera settings for webcam and external cameras

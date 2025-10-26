@@ -9,6 +9,7 @@ import time
 from typing import Optional
 import sys
 import threading
+import os
 
 import config
 import utils
@@ -425,6 +426,24 @@ class FaceRecognitionApp:
                 config.FONT_SCALE,
                 config.SHOW_CONFIDENCE
             )
+            
+            # Draw saved face thumbnail if enabled and person is tracked
+            if config.SHOW_FACE_THUMBNAIL and self.face_tracker and tracked_id:
+                # Get the saved image path for this person
+                registry_entry = self.face_tracker.get_person_info(tracked_id)
+                if registry_entry:
+                    # Build full path to saved image
+                    image_path = registry_entry.get('image_path')
+                    if image_path:
+                        full_image_path = os.path.join(config.BASE_DIR, image_path)
+                        frame = utils.draw_saved_face_thumbnail(
+                            frame,
+                            (top, right, bottom, left),
+                            saved_image_path=full_image_path,
+                            thumbnail_size=config.FACE_THUMBNAIL_SIZE,
+                            position="top_left",
+                            padding=config.FACE_THUMBNAIL_PADDING
+                        )
             
             # Draw person info box if API is enabled and data is available
             if config.ENABLE_PERSON_INFO_API and self.face_tracker and tracked_id:
@@ -855,7 +874,8 @@ def main():
         choices=[
             config.STREAM_TYPE_WEBCAM,
             config.STREAM_TYPE_EXTERNAL,
-            config.STREAM_TYPE_NETWORK
+            config.STREAM_TYPE_NETWORK,
+            config.STREAM_TYPE_CAMERA
         ],
         default=config.STREAM_TYPE_WEBCAM,
         help='Type of video source'

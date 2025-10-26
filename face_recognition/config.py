@@ -23,7 +23,7 @@ DISPLAY_HEIGHT = 720
 
 # Face detection settings
 DETECTION_MODEL = "hog"  # Options: "hog" (fast, CPU) or "cnn" (accurate, GPU)
-DETECTION_SCALE = 0.25  # Scale down frames for faster detection (0.25 = 1/4 size)
+DETECTION_SCALE = 0.5  # Scale down frames for faster detection (0.5 = 1/2 size, better accuracy)
 PROCESS_EVERY_N_FRAMES = 2  # Process every Nth frame for recognition
 NUMBER_OF_TIMES_TO_UPSAMPLE = 1  # Higher = more accurate but slower (better for small/distant faces)
 
@@ -42,6 +42,9 @@ ENABLE_GPU = False  # Set to True if you have a CUDA-capable GPU
 # Display settings
 SHOW_FPS = True
 SHOW_CONFIDENCE = True
+SHOW_FACE_THUMBNAIL = True  # Show cropped face thumbnail next to person
+FACE_THUMBNAIL_SIZE = 120  # Size of face thumbnail in pixels
+FACE_THUMBNAIL_PADDING = 10  # Padding around thumbnail
 BOX_COLOR_KNOWN = (0, 255, 0)  # Green for known faces
 BOX_COLOR_UNKNOWN = (0, 0, 255)  # Red for unknown faces
 TEXT_COLOR = (255, 255, 255)  # White
@@ -169,4 +172,5 @@ ENABLE_SUPABASE_UPLOAD = True  # Enable automatic upload to Supabase
 STREAM_TYPE_WEBCAM = "webcam"
 STREAM_TYPE_EXTERNAL = "external"
 STREAM_TYPE_NETWORK = "network"
+STREAM_TYPE_CAMERA = "camera"  # External camera (skips 0,1)
 
