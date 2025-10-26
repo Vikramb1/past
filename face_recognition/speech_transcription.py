@@ -30,6 +30,9 @@ class SpeechTranscriber:
         self.transcription_buffer = deque(maxlen=100)  # Store last 100 segments
         self.latest_transcription = ""
         self.buffer_lock = threading.Lock()
+
+        # Track last processed segment for continuous processing
+        self.last_processed_index = -1
         
         # Audio stream
         self.audio = None
@@ -254,27 +257,66 @@ class SpeechTranscriber:
     def get_recent_transcription(self, seconds: Optional[int] = None) -> str:
         """
         Get transcription from the last N seconds.
-        
+
         Args:
             seconds: Number of seconds to retrieve (default: buffer_seconds)
-        
+
         Returns:
             Combined transcription text from the specified time window
         """
         if seconds is None:
             seconds = self.buffer_seconds
-        
+
         current_time = time.time()
         cutoff_time = current_time - seconds
-        
+
         with self.buffer_lock:
             # Get all segments within time window
             recent_segments = [
                 seg['text'] for seg in self.transcription_buffer
                 if seg['timestamp'] >= cutoff_time
             ]
-            
+
             return ' '.join(recent_segments)
+
+    def get_latest_segment(self) -> Optional[dict]:
+        """
+        Get the most recent transcription segment with timestamp.
+
+        Returns:
+            Dictionary with 'text' and 'timestamp' keys, or None if no segments
+        """
+        with self.buffer_lock:
+            if self.transcription_buffer:
+                # Return the last segment
+                return dict(self.transcription_buffer[-1])
+            return None
+
+    def get_unprocessed_segments(self) -> list:
+        """
+        Get all unprocessed transcription segments.
+
+        Returns:
+            List of dictionaries with 'text' and 'timestamp' keys
+        """
+        with self.buffer_lock:
+            if not self.transcription_buffer:
+                return []
+
+            # Find segments that haven't been processed yet
+            unprocessed = []
+            buffer_list = list(self.transcription_buffer)
+
+            # Start from the last processed index + 1
+            start_index = self.last_processed_index + 1
+            if start_index < len(buffer_list):
+                for i in range(start_index, len(buffer_list)):
+                    unprocessed.append(dict(buffer_list[i]))
+
+                # Update the last processed index
+                self.last_processed_index = len(buffer_list) - 1
+
+            return unprocessed
     
     def is_ready(self) -> bool:
         """

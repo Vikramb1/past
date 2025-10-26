@@ -22,6 +22,7 @@ from info_display import draw_person_info_box
 from gesture_detector import GestureDetector
 from speech_transcription import SpeechTranscriber
 from amount_parser import AmountParser
+from imessage_handler import IMessageHandler
 
 
 class FaceRecognitionApp:
@@ -98,10 +99,14 @@ class FaceRecognitionApp:
             self.speech_transcriber.start()
             self.amount_parser = AmountParser()
             self.amount_preview = None  # Track amount preview state
+
+            # Initialize iMessage handler for "send an email" trigger
+            self.imessage_handler = IMessageHandler()
         else:
             self.speech_transcriber = None
             self.amount_parser = None
             self.amount_preview = None
+            self.imessage_handler = None
         
         # Display settings
         self.display_width = display_width
@@ -137,6 +142,8 @@ class FaceRecognitionApp:
         if config.ENABLE_SPEECH_TRANSCRIPTION:
             print("SPEECH TRANSCRIPTION: Enabled - Say amount before snap")
             print("  Example: 'send 0.5 SUI' then hold snap gesture")
+            print("IMESSAGE TRIGGER: Show peace sign ✌️ to send last 15 seconds of transcript")
+            print("  Transcript will be sent to +15109773150 via iMessage")
         print("=" * 60)
     
     def run(self) -> None:
@@ -285,7 +292,30 @@ class FaceRecognitionApp:
                                     
                                     # Clear amount preview
                                     self.amount_preview = None
-                
+
+                # Check for peace sign gesture to trigger iMessage
+                if self.speech_transcriber and self.imessage_handler and gesture_events:
+                    for event in gesture_events:
+                        if event.gesture_type == "peace":
+                            # Check if we can send (cooldown)
+                            if self.imessage_handler.can_send():
+                                # Get the last 15 seconds of transcript
+                                recent_transcript = self.speech_transcriber.get_recent_transcription(
+                                    seconds=self.imessage_handler.transcript_lookback_seconds
+                                )
+
+                                if recent_transcript:
+                                    # Send the transcript via iMessage
+                                    print(f"\n✌️ Peace sign detected! Sending last {self.imessage_handler.transcript_lookback_seconds}s of transcript...")
+                                    if self.imessage_handler.send_transcript(recent_transcript):
+                                        print(f"✅ Transcript sent successfully!")
+                                    else:
+                                        print(f"❌ Failed to send transcript")
+                                else:
+                                    print(f"⚠️  No transcript available in the last {self.imessage_handler.transcript_lookback_seconds} seconds")
+                            else:
+                                print(f"⏳ iMessage cooldown active, please wait...")
+
                 # Log events
                 if config.LOG_DETECTIONS or config.LOG_RECOGNITIONS:
                     for location, name, confidence in zip(

@@ -90,11 +90,18 @@ class GestureDetector:
                 
                 # Detect snap gesture
                 is_snap, confidence, hold_duration = self._detect_snap(
-                    hand_landmarks, 
+                    hand_landmarks,
                     hand_id,
                     frame.shape
                 )
-                
+
+                # Detect peace sign gesture
+                is_peace, peace_confidence = self._detect_peace_sign(
+                    hand_landmarks,
+                    hand_id,
+                    frame.shape
+                )
+
                 # Create gesture event if detected
                 if is_snap:
                     gesture_event = GestureEvent(
@@ -105,8 +112,18 @@ class GestureDetector:
                         hold_duration=hold_duration
                     )
                     gesture_events.append(gesture_event)
-                    
-                    # Draw snap detection
+                elif is_peace:
+                    gesture_event = GestureEvent(
+                        gesture_type="peace",
+                        hand_bbox=hand_bbox,
+                        confidence=peace_confidence,
+                        hand_label=hand_label,
+                        hold_duration=0.0
+                    )
+                    gesture_events.append(gesture_event)
+
+                # Draw gesture if detected
+                if is_snap or is_peace:
                     annotated_frame = self._draw_gesture(
                         annotated_frame,
                         gesture_event,
@@ -159,6 +176,104 @@ class GestureDetector:
         
         return (x_min, y_min, x_max - x_min, y_max - y_min)
     
+    def _detect_peace_sign(
+        self,
+        hand_landmarks,
+        hand_id: str,
+        frame_shape: Tuple[int, int, int]
+    ) -> Tuple[bool, float]:
+        """
+        Detect peace sign gesture (index and middle fingers extended, others folded).
+
+        Args:
+            hand_landmarks: MediaPipe hand landmarks
+            hand_id: Unique hand identifier
+            frame_shape: Frame dimensions
+
+        Returns:
+            Tuple of (is_peace_detected, confidence)
+        """
+        h, w, _ = frame_shape
+
+        # Get key landmarks for fingers
+        # Tips (endpoints of fingers)
+        thumb_tip = hand_landmarks.landmark[4]
+        index_tip = hand_landmarks.landmark[8]
+        middle_tip = hand_landmarks.landmark[12]
+        ring_tip = hand_landmarks.landmark[16]
+        pinky_tip = hand_landmarks.landmark[20]
+
+        # PIPs (middle joints) - used to check if fingers are extended
+        index_pip = hand_landmarks.landmark[6]
+        middle_pip = hand_landmarks.landmark[10]
+        ring_pip = hand_landmarks.landmark[14]
+        pinky_pip = hand_landmarks.landmark[18]
+
+        # MCPs (base joints)
+        index_mcp = hand_landmarks.landmark[5]
+        middle_mcp = hand_landmarks.landmark[9]
+        ring_mcp = hand_landmarks.landmark[13]
+        pinky_mcp = hand_landmarks.landmark[17]
+
+        # Wrist for reference
+        wrist = hand_landmarks.landmark[0]
+
+        # Check if index and middle fingers are extended
+        # Fingers are extended if tip is higher than PIP and PIP is higher than MCP (in y-axis)
+        index_extended = (index_tip.y < index_pip.y < index_mcp.y)
+        middle_extended = (middle_tip.y < middle_pip.y < middle_mcp.y)
+
+        # Check if other fingers are folded
+        # Fingers are folded if tip is close to or below MCP
+        ring_folded = (ring_tip.y >= ring_mcp.y - 0.05)  # Small tolerance
+        pinky_folded = (pinky_tip.y >= pinky_mcp.y - 0.05)
+
+        # Thumb can be in various positions, but typically folded or to the side
+        # Check if thumb is not extended upward
+        thumb_not_up = (thumb_tip.y >= index_mcp.y - 0.1)
+
+        # Check if index and middle fingers are close together (typical for peace sign)
+        index_middle_distance = abs(index_tip.x - middle_tip.x)
+        fingers_close = index_middle_distance < 0.15  # Normalized distance
+
+        # Peace sign criteria
+        is_peace = (
+            index_extended and
+            middle_extended and
+            ring_folded and
+            pinky_folded and
+            thumb_not_up and
+            fingers_close
+        )
+
+        # Calculate confidence based on how well criteria are met
+        confidence = 0.0
+        if is_peace:
+            # Base confidence
+            confidence = 0.7
+
+            # Bonus for very clear extension
+            if index_tip.y < index_pip.y - 0.1 and middle_tip.y < middle_pip.y - 0.1:
+                confidence += 0.15
+
+            # Bonus for fingers being close together
+            if index_middle_distance < 0.1:
+                confidence += 0.15
+
+            confidence = min(1.0, confidence)
+
+            # Check cooldown to prevent spam
+            current_time = time.time()
+            if hand_id in self.gesture_cooldowns:
+                if current_time - self.gesture_cooldowns[hand_id] < config.GESTURE_COOLDOWN_SECONDS:
+                    return False, 0.0
+
+            # Update cooldown
+            self.gesture_cooldowns[hand_id] = current_time
+            print(f"✌️ PEACE SIGN detected! Hand: {hand_id}, Confidence: {confidence:.2f}")
+
+        return is_peace, confidence
+
     def _detect_snap(
         self,
         hand_landmarks,
@@ -290,8 +405,11 @@ class GestureDetector:
             config.GESTURE_BOX_THICKNESS
         )
         
-        # Draw gesture label
-        label = f"{config.GESTURE_LABEL_TEXT} ({gesture_event.hand_label})"
+        # Draw gesture label based on type
+        if gesture_event.gesture_type == "peace":
+            label = f"PEACE! ({gesture_event.hand_label})"
+        else:
+            label = f"{config.GESTURE_LABEL_TEXT} ({gesture_event.hand_label})"
         label_size = cv2.getTextSize(
             label,
             cv2.FONT_HERSHEY_SIMPLEX,
