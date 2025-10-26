@@ -186,22 +186,35 @@ class FaceRecognitionApp:
                 # Fetch person info for newly detected faces
                 if self.person_api and self.face_tracker:
                     for tracked_id in tracked_ids:
-                        if tracked_id and not self.face_tracker.has_api_data(tracked_id):
-                            # Get registry entry to get image filename
-                            registry_entry = self.face_tracker.get_person_info(tracked_id)
-                            image_filename = registry_entry.get('image_filename') if registry_entry else None
+                        if tracked_id:
+                            # Check if we need to fetch/update API data
+                            should_fetch = False
+                            api_data = self.face_tracker.get_api_data(tracked_id)
                             
-                            # Call API for new person with image filename
-                            person_info = self.person_api.get_person_info(
-                                person_id=tracked_id,
-                                image_filename=image_filename
-                            )
-                            if person_info:
-                                # Store API response in tracker
-                                self.face_tracker.store_api_response(
-                                    tracked_id,
-                                    person_info.to_dict()
+                            if not api_data:
+                                # No data at all - fetch it
+                                should_fetch = True
+                            elif api_data.get('status') == 'scraping':
+                                # Data exists but still scraping - call API to check for updates
+                                # This will trigger polling if not already polling
+                                should_fetch = True
+                            
+                            if should_fetch:
+                                # Get registry entry to get image filename
+                                registry_entry = self.face_tracker.get_person_info(tracked_id)
+                                image_filename = registry_entry.get('image_filename') if registry_entry else None
+                                
+                                # Call API for new person with image filename
+                                person_info = self.person_api.get_person_info(
+                                    person_id=tracked_id,
+                                    image_filename=image_filename
                                 )
+                                if person_info:
+                                    # Store API response in tracker
+                                    self.face_tracker.store_api_response(
+                                        tracked_id,
+                                        person_info.to_dict()
+                                    )
                 
                 # Detect gestures if enabled
                 gesture_events = []

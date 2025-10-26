@@ -70,14 +70,14 @@ def _format_person_info(person_info: PersonInfo) -> list:
     # Check status
     if person_info.status == "scraping":
         print(f"   → Displaying scraping status")
-        lines.append(("🔍 Scraping...", config.INFO_FONT_SCALE_TITLE, True))
+        lines.append(("Scraping...", config.INFO_FONT_SCALE_TITLE, True))
         lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))
         lines.append(("Fetching person info...", config.INFO_FONT_SCALE_SMALL, False))
         return lines
     
     if person_info.status == "error":
         print(f"   → Displaying error status")
-        lines.append(("❌ Error", config.INFO_FONT_SCALE_TITLE, True))
+        lines.append(("Error", config.INFO_FONT_SCALE_TITLE, True))
         lines.append(("Could not fetch info", config.INFO_FONT_SCALE_SMALL, False))
         return lines
     
@@ -85,15 +85,74 @@ def _format_person_info(person_info: PersonInfo) -> list:
     name = person_info.full_name or "Unknown Person"
     print(f"   → Displaying completed status with name: {name}")
     lines.append((name, config.INFO_FONT_SCALE_TITLE, True))
-    lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))  # Spacer
+    lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))  # Small spacer
     
-    # Display LLM summary (already formatted with bullets)
+    # Display LLM summary with word wrapping for narrow box
     summary_lines = person_info.summary.split('\n')
     print(f"   → Summary has {len(summary_lines)} lines")
+    
     for i, line in enumerate(summary_lines):
-        if line.strip():
-            print(f"      Line {i}: {line.strip()[:50]}...")
-            lines.append((line.strip(), config.INFO_FONT_SCALE_SMALL, False))
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+        
+        # Skip lines that look like artifacts (e.g., "Here is...", "Example:", etc.)
+        skip_phrases = [
+            'here is', 'here are', 'here\'s',
+            'example:', 'format:',
+            'given this', 'write', 'rules:',
+            'note:', 'summary:',
+            '...', '...'  # Skip lines with ellipsis
+        ]
+        if any(phrase in line.lower() for phrase in skip_phrases):
+            print(f"      Skipping artifact line: {line[:50]}")
+            continue
+        
+        # Remove any emojis or bullets that might have slipped through
+        # Remove common emoji patterns and bullet points
+        cleaned_line = line
+        for char in ['•', '◦', '▪', '▫', '–', '—', '*', '→', '►']:
+            cleaned_line = cleaned_line.replace(char, '').strip()
+        
+        # Remove emojis (basic removal of common unicode ranges)
+        import re
+        emoji_pattern = re.compile("["
+            u"\U0001F600-\U0001F64F"  # emoticons
+            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+            u"\U0001F680-\U0001F6FF"  # transport & map symbols
+            u"\U0001F1E0-\U0001F1FF"  # flags
+            u"\U00002702-\U000027B0"
+            u"\U000024C2-\U0001F251"
+            "]+", flags=re.UNICODE)
+        cleaned_line = emoji_pattern.sub('', cleaned_line).strip()
+        
+        # Skip if line became empty after cleaning
+        if not cleaned_line:
+            continue
+        
+        # Check if line is a URL (social media link)
+        is_url = 'http://' in cleaned_line or 'https://' in cleaned_line or '.com/' in cleaned_line or 'linkedin.com' in cleaned_line or 'twitter.com' in cleaned_line
+        font_scale = config.INFO_FONT_SCALE_SMALL if is_url else config.INFO_FONT_SCALE_NORMAL
+        
+        # Word wrap long lines to fit narrow box (max ~40 chars per line)
+        if len(cleaned_line) > 45 and not is_url:
+            words = cleaned_line.split()
+            current_line = ""
+            for word in words:
+                test_line = f"{current_line} {word}".strip()
+                if len(test_line) <= 45:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        lines.append((current_line, font_scale, False))
+                    current_line = word
+            if current_line:
+                lines.append((current_line, font_scale, False))
+        else:
+            print(f"      Line {i}: {cleaned_line[:50]}")
+            lines.append((cleaned_line, font_scale, False))
     
     print(f"   → Total display lines: {len(lines)}")
     return lines
@@ -116,7 +175,7 @@ def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
     for text, font_scale, is_bold in lines:
         if text == "":
             # Empty line
-            line_height = int(20 * font_scale)
+            line_height = int(15 * font_scale)
             line_heights.append(line_height)
             total_height += line_height
             continue
@@ -136,6 +195,10 @@ def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
     
     total_height += config.INFO_BOX_PADDING_BOTTOM
     box_width = max_width + config.INFO_BOX_PADDING_LEFT + config.INFO_BOX_PADDING_RIGHT
+    
+    # Apply maximum width constraint
+    if box_width > config.INFO_BOX_MAX_WIDTH:
+        box_width = config.INFO_BOX_MAX_WIDTH
     
     return box_width, total_height, line_heights
 

@@ -245,17 +245,42 @@ class PersonInfoAPI:
         print(f"   - Google images length: {len(str(google_images))}")
         print(f"   - Nyne response keys: {list(nyne_response.keys()) if isinstance(nyne_response, dict) else 'N/A'}")
         
+        # Extract social media links
+        social_links = []
+        if isinstance(social_media, dict):
+            for platform, data in social_media.items():
+                if isinstance(data, dict) and 'url' in data:
+                    social_links.append(f"{platform}: {data['url']}")
+                elif isinstance(data, str) and data.startswith('http'):
+                    social_links.append(f"{platform}: {data}")
+        
+        social_links_str = "\n".join(social_links) if social_links else "None"
+        
         # Build context for LLM
         context = f"""
-Name: {full_name}
-Social Media: {social_media}
-Google Images: {google_images}
-Nyne AI Data: {nyne_response}
+Given this data about {full_name}:
+Social Media: {social_links_str}
+Additional Info: {nyne_response}
 
-Create a SHORT bullet-pointed summary (max 5-6 bullets) with key information about this person.
-Focus on: name, location, profession/role, notable facts, social profiles.
-Format as simple bullet points with emojis where appropriate.
-Keep each bullet under 50 characters.
+Write 2-3 brief sentences about this person. Include:
+- Their profession or role (if known)
+- Location (if known)
+- One interesting fact (if available)
+
+Rules:
+- NO emojis at all
+- NO bullet points
+- NO markdown formatting
+- Plain text sentences only
+- Maximum 120 characters total
+- If information is missing, don't mention it or use placeholders
+- Include social media URLs on separate lines at the end
+
+Example format:
+Software Engineer at Google, based in San Francisco.
+Specializes in machine learning and AI.
+linkedin.com/in/username
+twitter.com/username
 """
         
         print(f"\n📝 [DEBUG] LLM Prompt:")

@@ -82,18 +82,19 @@ INFO_BOX_BG_COLOR = (40, 40, 40)  # Dark gray background (BGR)
 INFO_BOX_BORDER_COLOR = (100, 200, 255)  # Light blue border (BGR)
 INFO_BOX_BORDER_THICKNESS = 1
 INFO_BOX_ALPHA = 0.85  # Background transparency (0.0-1.0, higher = more opaque)
-INFO_BOX_PADDING_LEFT = 8
-INFO_BOX_PADDING_RIGHT = 8
-INFO_BOX_PADDING_TOP = 8
-INFO_BOX_PADDING_BOTTOM = 8
+INFO_BOX_PADDING_LEFT = 6
+INFO_BOX_PADDING_RIGHT = 6
+INFO_BOX_PADDING_TOP = 6
+INFO_BOX_PADDING_BOTTOM = 6
 INFO_BOX_MARGIN = 5  # Space between face box and info box
+INFO_BOX_MAX_WIDTH = 350  # Maximum width of info box in pixels
 
 # Info text settings
 INFO_TEXT_COLOR = (255, 255, 255)  # White text (BGR)
-INFO_FONT_SCALE_TITLE = 0.45  # Font size for name
-INFO_FONT_SCALE_NORMAL = 0.35  # Font size for email/phone
-INFO_FONT_SCALE_SMALL = 0.3  # Font size for employment details
-INFO_LINE_SPACING = 3  # Pixels between lines
+INFO_FONT_SCALE_TITLE = 0.5  # Font size for name
+INFO_FONT_SCALE_NORMAL = 0.35  # Font size for description
+INFO_FONT_SCALE_SMALL = 0.28  # Font size for social links
+INFO_LINE_SPACING = 2  # Pixels between lines
 
 # Gesture detection settings
 ENABLE_GESTURE_DETECTION = True  # Enable hand gesture recognition
