@@ -213,12 +213,14 @@ class FaceRecognitionApp:
                                         # Parse amount from recent transcription
                                         if self.speech_transcriber and self.amount_parser:
                                             recent_text = self.speech_transcriber.get_recent_transcription()
-                                            parsed_amount = self.amount_parser.parse_amount(recent_text)
-                                            is_valid, validated_amount, message = self.amount_parser.validate_amount(parsed_amount)
+                                            parsed_amount, currency, display_text = self.amount_parser.parse_amount(recent_text)
+                                            is_valid, validated_amount, message, validated_currency, validated_display = self.amount_parser.validate_amount(parsed_amount, currency, display_text)
                                             
                                             if is_valid:
                                                 self.amount_preview = {
-                                                    'amount_sui': validated_amount,
+                                                    'amount': validated_amount,
+                                                    'currency': validated_currency,
+                                                    'display_text': validated_display,
                                                     'message': message,
                                                     'timestamp': time.time(),
                                                     'state': 'preview'
@@ -227,9 +229,11 @@ class FaceRecognitionApp:
                                             else:
                                                 print(f"⚠️  {message}")
                                         else:
-                                            # No transcription, use default
+                                            # No transcription, use default SUI
                                             self.amount_preview = {
-                                                'amount_sui': config.DEFAULT_PAYMENT_AMOUNT_SUI,
+                                                'amount': config.DEFAULT_PAYMENT_AMOUNT_SUI,
+                                                'currency': 'SUI',
+                                                'display_text': 'SUI',
                                                 'message': f'Using default: {config.DEFAULT_PAYMENT_AMOUNT_SUI} SUI',
                                                 'timestamp': time.time(),
                                                 'state': 'preview'
@@ -244,19 +248,20 @@ class FaceRecognitionApp:
                                     # Mark as triggered to prevent repeat
                                     self.gesture_detector.gesture_states[hand_id]['payment_triggered'] = True
                                     
-                                    # Get the amount to send
-                                    if self.amount_preview and 'amount_sui' in self.amount_preview:
-                                        amount_sui = self.amount_preview['amount_sui']
+                                    # Extract amount and currency from preview
+                                    if self.amount_preview and 'amount' in self.amount_preview:
+                                        amount = self.amount_preview['amount']
+                                        currency = self.amount_preview.get('currency', 'SUI')
+                                        display_text = self.amount_preview.get('display_text', 'SUI')
                                     else:
-                                        amount_sui = config.DEFAULT_PAYMENT_AMOUNT_SUI
-                                    
-                                    # Convert to MIST
-                                    amount_mist = self.amount_parser.amount_to_mist(amount_sui) if self.amount_parser else int(amount_sui * 1_000_000_000)
+                                        amount = config.DEFAULT_PAYMENT_AMOUNT_SUI
+                                        currency = 'SUI'
+                                        display_text = 'SUI'
                                     
                                     # Send payment in background thread
                                     print(f"\n💰 Payment triggered by {event.hold_duration:.1f}s snap hold!")
-                                    print(f"💸 Sending {amount_sui} SUI ({amount_mist} MIST)")
-                                    threading.Thread(target=self._send_payment_async, args=(amount_mist,), daemon=True).start()
+                                    print(f"💸 Sending {amount} {display_text}")
+                                    threading.Thread(target=self._send_payment_async, args=(amount, currency, display_text), daemon=True).start()
                                     
                                     # Clear amount preview
                                     self.amount_preview = None
@@ -432,38 +437,46 @@ class FaceRecognitionApp:
         self.face_engine.reset_frame_cache()
         print("Database rebuilt successfully")
     
-    def _send_payment_async(self, amount_mist: int = None):
+    def _send_payment_async(self, amount: float = None, currency: str = 'SUI', display_text: str = 'SUI'):
         """Send crypto payment asynchronously (runs in background thread).
         
         Args:
-            amount_mist: Amount to send in MIST (default: config value)
+            amount: Amount to send in the specified currency
+            currency: Currency type ('SUI' or 'XRPL')
+            display_text: Display text for the currency (e.g., 'XRP', 'XRPL', 'SUI')
         """
         try:
-            # Convert to SUI for display
-            amount_sui = amount_mist / 1_000_000_000 if amount_mist else config.DEFAULT_PAYMENT_AMOUNT_SUI
+            # Use default if amount not provided
+            if amount is None:
+                if currency == 'XRPL':
+                    amount = config.DEFAULT_PAYMENT_AMOUNT_XRPL
+                else:
+                    amount = config.DEFAULT_PAYMENT_AMOUNT_SUI
             
             # Set sending status
             self.payment_status = {
                 "state": "sending",
-                "message": f"Sending {amount_sui} SUI...",
+                "message": f"Sending {amount} {display_text}...",
                 "timestamp": time.time()
             }
             
             # Send the payment
-            result = self.crypto_handler.send_payment(amount_mist)
+            result = self.crypto_handler.send_payment(amount, currency, display_text)
             
             if result['success']:
                 # Payment successful
                 recipient_addr = result.get('recipientAddress', 'N/A')
+                amount_display = result.get('amountDisplay', f"{amount} {display_text}")
                 self.payment_status = {
                     "state": "success",
-                    "message": f"Sent {amount_sui} SUI!",
+                    "message": f"Sent {amount_display}!",
                     "digest": result.get('transactionDigest', 'N/A'),
                     "explorerUrl": result.get('explorerUrl', ''),
                     "recipientAddress": recipient_addr,
+                    "currency": currency,
                     "timestamp": time.time()
                 }
-                print(f"\n✅ Crypto gift successful!")
+                print(f"\n✅ {currency} crypto gift successful!")
                 print(f"   Transaction: {result.get('transactionDigest', 'N/A')}")
                 print(f"   New wallet: {recipient_addr[:20]}..." if len(recipient_addr) > 20 else recipient_addr)
             else:
@@ -656,14 +669,15 @@ class FaceRecognitionApp:
         if not self.amount_preview:
             return frame
         
-        amount_sui = self.amount_preview.get('amount_sui', 0)
+        amount = self.amount_preview.get('amount', 0)
+        display_text = self.amount_preview.get('display_text', 'SUI')
         state = self.amount_preview.get('state', 'preview')
         
         # Get frame dimensions
         h, w = frame.shape[:2]
         
         # Prepare text
-        text = f"Sending: {amount_sui} SUI"
+        text = f"Sending: {amount} {display_text}"
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = config.AMOUNT_FONT_SCALE
         thickness = 2
@@ -745,9 +759,12 @@ class FaceRecognitionApp:
             try:
                 stats = self.crypto_handler.get_transaction_stats()
                 total = stats['total_sent']
-                if total['sui'] > 0:
+                if total.get('SUI', 0) > 0 or total.get('XRPL', 0) > 0:
                     print("\n=== Transaction Statistics ===")
-                    print(f"Total sent: {total['sui']:.6f} SUI ({total['mist']} MIST)")
+                    if total.get('SUI', 0) > 0:
+                        print(f"Total SUI sent: {total['SUI']:.6f} SUI")
+                    if total.get('XRPL', 0) > 0:
+                        print(f"Total XRPL sent: {total['XRPL']:.6f} XRPL")
                     print(f"Transaction log: {config.LOGS_DIR}/transactions.csv")
             except Exception as e:
                 pass

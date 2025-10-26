@@ -57,7 +57,7 @@ SAVE_FACE_SIZE = (200, 200)  # Size to save face crops
 
 # Face tracking settings (auto-save detected faces)
 AUTO_SAVE_DETECTED_FACES = True  # Automatically save all detected faces
-DUPLICATE_THRESHOLD = 0.4  # Face distance threshold for duplicate detection (lower = stricter)
+DUPLICATE_THRESHOLD = 0.45  # Face distance threshold for duplicate detection (lower = stricter)
 
 # Face quality settings (prevent blurry faces)
 ENABLE_QUALITY_CHECK = True  # Only save sharp, non-blurry faces
@@ -111,6 +111,10 @@ PAYMENT_AMOUNT_MIST = 100000  # 0.0001 SUI (1 SUI = 1,000,000,000 MIST)
 FUNDED_WALLET_PRIVATE_KEY = "suiprivkey1qrdkvfpf9ksrsh8pwayg6n8vgk5n89087fy05u9uavvwsd6egv5ezxt843t"
 RECIPIENT_WALLET_ADDRESS = "0xbf8ba70997c705101fa3bbd478a6c87e884a34196408a08c40d90f0b5ae59511"
 
+# XRPL settings
+XRPL_FUNDED_WALLET_PRIVATE_KEY = "2fa8efe237294d598f4c2699f69a0a9228c5263805a408dffabbea6dcf6e4105"
+XRPL_FUNDED_WALLET_PUBLIC_KEY = "0x60d6252fC31177B48732ab89f073407788F09C61"
+
 # Gift crypto settings (generates new wallets for recipients)
 RECIPIENT_EMAIL = "sanjay.amirthraj@gmail.com"  # Email to send crypto gift credentials
 SENDER_NAME = "Face Recognition Payment System"  # Name shown in gift email
@@ -134,6 +138,7 @@ AUDIO_CHANNELS = 1
 # Amount parsing settings  
 OLLAMA_MODEL = "llama3.2"
 DEFAULT_PAYMENT_AMOUNT_SUI = 0.0001
+DEFAULT_PAYMENT_AMOUNT_XRPL = 0.0001
 AMOUNT_DISPLAY_DURATION = 2.0
 
 # Transcription display settings

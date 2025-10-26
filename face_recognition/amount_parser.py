@@ -1,20 +1,22 @@
 """
-Amount parser module using Ollama (llama3.2) to extract SUI amounts from text.
-Parses natural language commands like "send 0.5 SUI" or "send five SUI".
+Amount parser module using Ollama (llama3.2) to extract crypto amounts from text.
+Parses natural language commands like "send 0.5 SUI" or "send 0.0001 XRPL".
+Supports both SUI and XRPL (XRP) cryptocurrencies.
 """
 import re
-from typing import Optional
+from typing import Optional, Tuple
 import ollama
 import config
 
 
 class AmountParser:
-    """Parses SUI amounts from transcribed speech using Ollama LLM."""
+    """Parses crypto amounts from transcribed speech using Ollama LLM."""
     
     def __init__(self):
         """Initialize the amount parser."""
         self.model = config.OLLAMA_MODEL
-        self.default_amount = config.DEFAULT_PAYMENT_AMOUNT_SUI
+        self.default_amount_sui = config.DEFAULT_PAYMENT_AMOUNT_SUI
+        self.default_amount_xrpl = config.DEFAULT_PAYMENT_AMOUNT_XRPL
         
         # Word to number mapping for spoken numbers
         self.word_to_num = {
@@ -26,156 +28,186 @@ class AmountParser:
         
         print(f"\n🧠 Amount Parser initialized")
         print(f"Model: {self.model}")
-        print(f"Default amount: {self.default_amount} SUI")
+        print(f"Default SUI amount: {self.default_amount_sui} SUI")
+        print(f"Default XRPL amount: {self.default_amount_xrpl} XRPL")
     
-    def parse_amount(self, text: str) -> Optional[float]:
+    def parse_amount(self, text: str) -> Tuple[Optional[float], str, str]:
         """
-        Parse SUI amount from text using multiple strategies.
+        Parse crypto amount from text using multiple strategies.
         
         Args:
             text: Transcribed text to parse
         
         Returns:
-            Parsed amount in SUI, or None if not found
+            Tuple of (amount, currency, display_text)
+            - amount: Parsed amount or None if not found
+            - currency: 'SUI' or 'XRPL'
+            - display_text: Original currency text from speech (e.g., 'XRP', 'XRPL', 'SUI')
         """
         if not text or not text.strip():
-            return None
+            return None, 'SUI', 'SUI'
         
         print(f"\n💭 Parsing: '{text}'")
         
         # Strategy 1: Try regex patterns first (faster)
-        amount = self._parse_with_regex(text)
-        if amount is not None:
-            print(f"✅ Regex parsed: {amount} SUI")
-            return amount
+        result = self._parse_with_regex(text)
+        if result is not None:
+            amount, currency, display_text = result
+            print(f"✅ Regex parsed: {amount} {display_text}")
+            return amount, currency, display_text
         
         # Strategy 2: Use Ollama LLM for complex parsing
-        amount = self._parse_with_ollama(text)
-        if amount is not None:
-            print(f"✅ LLM parsed: {amount} SUI")
-            return amount
+        result = self._parse_with_ollama(text)
+        if result is not None:
+            amount, currency, display_text = result
+            print(f"✅ LLM parsed: {amount} {display_text}")
+            return amount, currency, display_text
         
-        print(f"ℹ️  No amount detected, using default: {self.default_amount} SUI")
-        return None
+        print(f"ℹ️  No amount detected, using default: {self.default_amount_sui} SUI")
+        return None, 'SUI', 'SUI'
     
-    def _parse_with_regex(self, text: str) -> Optional[float]:
+    def _parse_with_regex(self, text: str) -> Optional[Tuple[float, str, str]]:
         """
-        Parse amount using regex patterns.
+        Parse amount using regex patterns for both SUI and XRPL.
         
         Args:
             text: Text to parse
         
         Returns:
-            Parsed amount or None
+            Tuple of (amount, currency, display_text) or None
         """
         text_lower = text.lower()
         
-        # Pattern 1: "send 0.5 SUI" or "0.5 SUI"
-        pattern1 = r'(?:send\s+)?(\d+\.?\d*)\s*sui'
-        match = re.search(pattern1, text_lower)
-        if match:
-            try:
-                return float(match.group(1))
-            except ValueError:
-                pass
+        # XRPL Patterns (check first since XRPL is more specific)
+        # Pattern: "send 0.5 XRPL" or "send 0.5 XRP" or "send 0.5 of XRPL"
+        xrpl_patterns = [
+            (r'(?:send\s+)?(\d+\.?\d*)\s*(?:of\s+)?xrpl\b', 'XRPL'),
+            (r'(?:send\s+)?(\d+\.?\d*)\s*(?:of\s+)?xrp\b', 'XRP'),
+            (r'(?:send\s+)?(\.\d+)\s*(?:of\s+)?xrpl\b', 'XRPL'),
+            (r'(?:send\s+)?(\.\d+)\s*(?:of\s+)?xrp\b', 'XRP'),
+        ]
         
-        # Pattern 2: "send .5 SUI" (leading decimal)
-        pattern2 = r'(?:send\s+)?(\.\d+)\s*sui'
-        match = re.search(pattern2, text_lower)
-        if match:
-            try:
-                return float(match.group(1))
-            except ValueError:
-                pass
+        for pattern, display_name in xrpl_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                try:
+                    amount = float(match.group(1))
+                    return amount, 'XRPL', display_name
+                except ValueError:
+                    pass
         
-        # Pattern 3: Just a number followed by SUI
-        pattern3 = r'(\d+\.?\d*)\s*sui'
-        match = re.search(pattern3, text_lower)
-        if match:
-            try:
-                return float(match.group(1))
-            except ValueError:
-                pass
+        # SUI Patterns
+        sui_patterns = [
+            (r'(?:send\s+)?(\d+\.?\d*)\s*(?:of\s+)?sui\b', 'SUI'),
+            (r'(?:send\s+)?(\.\d+)\s*(?:of\s+)?sui\b', 'SUI'),
+        ]
+        
+        for pattern, display_name in sui_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                try:
+                    amount = float(match.group(1))
+                    return amount, 'SUI', display_name
+                except ValueError:
+                    pass
         
         return None
     
-    def _parse_with_ollama(self, text: str) -> Optional[float]:
+    def _parse_with_ollama(self, text: str) -> Optional[Tuple[float, str, str]]:
         """
-        Parse amount using Ollama LLM.
+        Parse amount and currency using Ollama LLM.
         
         Args:
             text: Text to parse
         
         Returns:
-            Parsed amount or None
+            Tuple of (amount, currency, display_text) or None
         """
         try:
-            prompt = f"""Extract the SUI cryptocurrency amount from this text. Return ONLY the numeric value as a decimal number, nothing else.
+            prompt = f"""Extract the cryptocurrency amount and type from this text. Return the amount and currency type.
 
 Examples:
-- "send 0.5 SUI" -> 0.5
-- "send five SUI" -> 5
-- "transfer 0.0001 SUI" -> 0.0001
-- "send one point five SUI" -> 1.5
+- "send 0.5 SUI" -> 0.5 SUI
+- "send five XRP" -> 5 XRP
+- "transfer 0.0001 XRPL" -> 0.0001 XRPL
+- "send one point five SUI" -> 1.5 SUI
 
 Text: "{text}"
 
-Amount:"""
+Response (amount and currency):"""
             
             response = ollama.generate(
                 model=self.model,
                 prompt=prompt,
                 options={
                     'temperature': 0.1,  # Low temperature for deterministic output
-                    'num_predict': 20,   # Short response expected
+                    'num_predict': 30,   # Short response expected
                 }
             )
             
             # Extract the response
-            result = response['response'].strip()
+            result = response['response'].strip().lower()
             
-            # Try to parse as float
-            # Remove any extra text and keep only number
+            # Try to extract amount and currency
             numbers = re.findall(r'\d+\.?\d*', result)
-            if numbers:
-                return float(numbers[0])
+            if not numbers:
+                return None
             
-            return None
+            amount = float(numbers[0])
+            
+            # Detect currency
+            if 'xrpl' in result or 'xrp' in result:
+                # Preserve the original text for display
+                if 'xrpl' in result:
+                    return amount, 'XRPL', 'XRPL'
+                else:
+                    return amount, 'XRPL', 'XRP'
+            elif 'sui' in result:
+                return amount, 'SUI', 'SUI'
+            else:
+                # Default to SUI if no currency detected
+                return amount, 'SUI', 'SUI'
             
         except Exception as e:
             print(f"⚠️  Ollama parsing error: {e}")
             return None
     
-    def validate_amount(self, amount: Optional[float]) -> tuple[bool, Optional[float], str]:
+    def validate_amount(self, amount: Optional[float], currency: str = 'SUI', display_text: str = 'SUI') -> Tuple[bool, Optional[float], str, str, str]:
         """
         Validate parsed amount is reasonable.
         
         Args:
             amount: Parsed amount to validate
+            currency: Currency type ('SUI' or 'XRPL')
+            display_text: Display text for currency (e.g., 'XRP', 'XRPL', 'SUI')
         
         Returns:
-            Tuple of (is_valid, validated_amount, message)
+            Tuple of (is_valid, validated_amount, message, currency, display_text)
         """
+        # Use defaults if amount is None
         if amount is None:
-            return True, self.default_amount, f"Using default: {self.default_amount} SUI"
+            if currency == 'XRPL':
+                return True, self.default_amount_xrpl, f"Using default: {self.default_amount_xrpl} {display_text}", currency, display_text
+            else:
+                return True, self.default_amount_sui, f"Using default: {self.default_amount_sui} {display_text}", currency, display_text
         
         # Check for negative
         if amount < 0:
-            return False, None, "Amount cannot be negative"
+            return False, None, "Amount cannot be negative", currency, display_text
         
         # Check for zero
         if amount == 0:
-            return False, None, "Amount cannot be zero"
+            return False, None, "Amount cannot be zero", currency, display_text
         
         # Check for unreasonably large amounts (safety check)
         if amount > 1000:
-            return False, None, f"Amount too large: {amount} SUI (max: 1000)"
+            return False, None, f"Amount too large: {amount} {display_text} (max: 1000)", currency, display_text
         
         # Check for unreasonably small amounts
         if amount < 0.00001:
-            return False, None, f"Amount too small: {amount} SUI (min: 0.00001)"
+            return False, None, f"Amount too small: {amount} {display_text} (min: 0.00001)", currency, display_text
         
-        return True, amount, f"Amount validated: {amount} SUI"
+        return True, amount, f"Amount validated: {amount} {display_text}", currency, display_text
     
     def amount_to_mist(self, amount_sui: float) -> int:
         """
@@ -188,4 +220,16 @@ Amount:"""
             Amount in MIST (1 SUI = 1,000,000,000 MIST)
         """
         return int(amount_sui * 1_000_000_000)
+    
+    def amount_to_wei(self, amount_xrpl: float) -> int:
+        """
+        Convert XRPL amount to Wei (smallest unit for XRPL EVM).
+        
+        Args:
+            amount_xrpl: Amount in XRPL/XRP
+        
+        Returns:
+            Amount in Wei (1 XRP = 10^18 Wei)
+        """
+        return int(amount_xrpl * 10**18)
 

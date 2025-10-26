@@ -1,5 +1,5 @@
 """
-Crypto payment handler for sending SUI cryptocurrency via gesture triggers.
+Crypto payment handler for sending multi-chain cryptocurrency (SUI & XRPL) via gesture triggers.
 Manages Node.js server subprocess and handles payment API calls.
 """
 import subprocess
@@ -13,7 +13,7 @@ from transaction_logger import TransactionLogger
 
 
 class CryptoPaymentHandler:
-    """Handles crypto payments triggered by gestures."""
+    """Handles multi-chain crypto payments triggered by gestures."""
     
     def __init__(self):
         """Initialize the crypto payment handler."""
@@ -26,9 +26,11 @@ class CryptoPaymentHandler:
         # Initialize transaction logger
         self.transaction_logger = TransactionLogger()
         
-        print(f"\nCrypto Payment Handler initialized")
+        print(f"\nMulti-Chain Crypto Payment Handler initialized")
+        print(f"Supported chains: SUI, XRPL")
         print(f"Payment cooldown: {self.payment_cooldown}s")
-        print(f"Payment amount: {config.PAYMENT_AMOUNT_MIST} MIST (0.0001 SUI)")
+        print(f"Default SUI amount: {config.DEFAULT_PAYMENT_AMOUNT_SUI} SUI")
+        print(f"Default XRPL amount: {config.DEFAULT_PAYMENT_AMOUNT_XRPL} XRPL")
     
     def start_server(self) -> bool:
         """
@@ -123,12 +125,14 @@ class CryptoPaymentHandler:
         
         return True
     
-    def send_payment(self, amount_mist: Optional[int] = None) -> Dict:
+    def send_payment(self, amount: Optional[float] = None, currency: str = 'SUI', display_text: str = None) -> Dict:
         """
-        Send a crypto payment via the API.
+        Send a crypto payment via the API (supports both SUI and XRPL).
         
         Args:
-            amount_mist: Amount to send in MIST (default: config.PAYMENT_AMOUNT_MIST)
+            amount: Amount to send in the specified currency
+            currency: Currency type ('SUI' or 'XRPL')
+            display_text: Display text for currency (e.g., 'XRP', 'XRPL', 'SUI')
         
         Returns:
             Dictionary with success status and transaction details
@@ -140,17 +144,38 @@ class CryptoPaymentHandler:
                 'error': 'Crypto server is still starting up'
             }
         
-        # Use provided amount or default from config
-        if amount_mist is None:
-            amount_mist = config.PAYMENT_AMOUNT_MIST
+        # Set default display text if not provided
+        if display_text is None:
+            display_text = 'XRP' if currency == 'XRPL' else 'SUI'
         
-        # Convert to SUI for display (1 SUI = 1,000,000,000 MIST)
-        amount_sui = amount_mist / 1_000_000_000
+        # Route to the correct payment method
+        if currency == 'XRPL':
+            return self._send_xrpl_payment(amount, display_text)
+        else:
+            return self._send_sui_payment(amount, display_text)
+    
+    def _send_sui_payment(self, amount_sui: Optional[float] = None, display_text: str = 'SUI') -> Dict:
+        """
+        Send a SUI payment via the API.
+        
+        Args:
+            amount_sui: Amount to send in SUI (default: config.DEFAULT_PAYMENT_AMOUNT_SUI)
+            display_text: Display text for currency (default: 'SUI')
+        
+        Returns:
+            Dictionary with success status and transaction details
+        """
+        # Use provided amount or default from config
+        if amount_sui is None:
+            amount_sui = config.DEFAULT_PAYMENT_AMOUNT_SUI
+        
+        # Convert to MIST (1 SUI = 1,000,000,000 MIST)
+        amount_mist = int(amount_sui * 1_000_000_000)
         
         try:
-            print("\n💸 Initiating crypto gift payment...")
+            print("\n💸 Initiating SUI crypto gift payment...")
             print(f"Amount: {amount_mist} MIST ({amount_sui} SUI)")
-            print(f"Generating new wallet for recipient...")
+            print(f"Generating new SUI wallet for recipient...")
             
             # Prepare the gift-crypto request
             # This endpoint generates a new wallet for the recipient and emails them
@@ -183,14 +208,15 @@ class CryptoPaymentHandler:
                 transaction = result.get('transaction', {})
                 recipient = result.get('recipient', {})
                 
-                print(f"✅ Crypto gift successful!")
+                print(f"✅ SUI crypto gift successful!")
                 print(f"Transaction: {transaction.get('digest', 'N/A')}")
                 print(f"New wallet address: {recipient.get('address', 'N/A')}")
                 print(f"Explorer: {transaction.get('explorerUrl', 'N/A')}")
                 
                 # Log the transaction
                 self.transaction_logger.log_transaction(
-                    amount_mist=amount_mist,
+                    amount=amount_sui,
+                    currency='SUI',
                     transaction_digest=transaction.get('digest', 'unknown'),
                     recipient_address=recipient.get('address', 'unknown'),
                     explorer_url=transaction.get('explorerUrl', ''),
@@ -201,26 +227,30 @@ class CryptoPaymentHandler:
                 
                 return {
                     'success': True,
+                    'currency': 'SUI',
                     'transactionDigest': transaction.get('digest'),
                     'explorerUrl': transaction.get('explorerUrl'),
-                    'amountInSUI': transaction.get('amountInSUI', str(amount_sui)),
+                    'amount': amount_sui,
+                    'amountDisplay': f"{amount_sui} {display_text}",
                     'recipientAddress': recipient.get('address'),
-                    'message': 'Crypto gift sent successfully'
+                    'message': 'SUI crypto gift sent successfully'
                 }
             else:
                 error_msg = result.get('message', 'Unknown error')
-                print(f"❌ Payment failed: {error_msg}")
+                print(f"❌ SUI payment failed: {error_msg}")
                 
                 return {
                     'success': False,
+                    'currency': 'SUI',
                     'message': error_msg,
                     'error': result.get('error', 'Transaction failed')
                 }
         
         except requests.exceptions.Timeout:
-            print("❌ Payment request timed out")
+            print("❌ SUI payment request timed out")
             return {
                 'success': False,
+                'currency': 'SUI',
                 'message': 'Request timed out',
                 'error': 'Server took too long to respond'
             }
@@ -229,14 +259,131 @@ class CryptoPaymentHandler:
             print("❌ Cannot connect to crypto server")
             return {
                 'success': False,
+                'currency': 'SUI',
                 'message': 'Server not reachable',
                 'error': 'Failed to connect to localhost:3001'
             }
         
         except Exception as e:
-            print(f"❌ Payment error: {e}")
+            print(f"❌ SUI payment error: {e}")
             return {
                 'success': False,
+                'currency': 'SUI',
+                'message': str(e),
+                'error': f'Unexpected error: {type(e).__name__}'
+            }
+    
+    def _send_xrpl_payment(self, amount_xrpl: Optional[float] = None, display_text: str = 'XRP') -> Dict:
+        """
+        Send an XRPL payment via the API.
+        
+        Args:
+            amount_xrpl: Amount to send in XRPL/XRP (default: config.DEFAULT_PAYMENT_AMOUNT_XRPL)
+            display_text: Display text for currency (e.g., 'XRP' or 'XRPL')
+        
+        Returns:
+            Dictionary with success status and transaction details
+        """
+        # Use provided amount or default from config
+        if amount_xrpl is None:
+            amount_xrpl = config.DEFAULT_PAYMENT_AMOUNT_XRPL
+        
+        try:
+            print("\n💸 Initiating XRPL crypto gift payment...")
+            print(f"Amount: {amount_xrpl} XRP")
+            print(f"Generating new XRPL EVM wallet for recipient...")
+            
+            # Prepare the XRPL gift-crypto request
+            recipient_email = getattr(config, 'RECIPIENT_EMAIL', 'sanjay.amirthraj@gmail.com')
+            sender_name = getattr(config, 'SENDER_NAME', 'Face Recognition Payment System')
+            
+            payload = {
+                'senderPrivateKey': config.XRPL_FUNDED_WALLET_PRIVATE_KEY,
+                'recipientEmail': recipient_email,
+                'amount': str(amount_xrpl),  # Send as string for consistency
+                'senderName': sender_name
+            }
+            
+            print(f"Email will be sent to: {recipient_email}")
+            
+            # Send the XRPL gift-crypto request
+            response = requests.post(
+                f"{self.server_url}/xrpl/gift-crypto",
+                json=payload,
+                timeout=30
+            )
+            
+            result = response.json()
+            
+            if result.get('success'):
+                # Update last payment time
+                self.last_payment_time = time.time()
+                
+                # Extract transaction details from XRPL gift-crypto response
+                transaction = result.get('transaction', {})
+                recipient = result.get('recipient', {})
+                
+                print(f"✅ XRPL crypto gift successful!")
+                print(f"Transaction: {transaction.get('hash', 'N/A')}")
+                print(f"New wallet address: {recipient.get('address', 'N/A')}")
+                print(f"Explorer: {transaction.get('explorerUrl', 'N/A')}")
+                
+                # Log the transaction
+                self.transaction_logger.log_transaction(
+                    amount=amount_xrpl,
+                    currency='XRPL',
+                    transaction_digest=transaction.get('hash', 'unknown'),
+                    recipient_address=recipient.get('address', 'unknown'),
+                    explorer_url=transaction.get('explorerUrl', ''),
+                    recipient_email=recipient_email,
+                    sender_name=sender_name,
+                    status='success'
+                )
+                
+                return {
+                    'success': True,
+                    'currency': 'XRPL',
+                    'transactionDigest': transaction.get('hash'),
+                    'explorerUrl': transaction.get('explorerUrl'),
+                    'amount': amount_xrpl,
+                    'amountDisplay': f"{amount_xrpl} {display_text}",
+                    'recipientAddress': recipient.get('address'),
+                    'message': 'XRPL crypto gift sent successfully'
+                }
+            else:
+                error_msg = result.get('message', 'Unknown error')
+                print(f"❌ XRPL payment failed: {error_msg}")
+                
+                return {
+                    'success': False,
+                    'currency': 'XRPL',
+                    'message': error_msg,
+                    'error': result.get('error', 'Transaction failed')
+                }
+        
+        except requests.exceptions.Timeout:
+            print("❌ XRPL payment request timed out")
+            return {
+                'success': False,
+                'currency': 'XRPL',
+                'message': 'Request timed out',
+                'error': 'Server took too long to respond'
+            }
+        
+        except requests.exceptions.ConnectionError:
+            print("❌ Cannot connect to crypto server")
+            return {
+                'success': False,
+                'currency': 'XRPL',
+                'message': 'Server not reachable',
+                'error': 'Failed to connect to localhost:3001'
+            }
+        
+        except Exception as e:
+            print(f"❌ XRPL payment error: {e}")
+            return {
+                'success': False,
+                'currency': 'XRPL',
                 'message': str(e),
                 'error': f'Unexpected error: {type(e).__name__}'
             }

@@ -35,8 +35,8 @@ class TransactionLogger:
         headers = [
             'timestamp',
             'datetime',
-            'amount_mist',
-            'amount_sui',
+            'currency',
+            'amount',
             'transaction_digest',
             'recipient_address',
             'recipient_email',
@@ -51,7 +51,8 @@ class TransactionLogger:
     
     def log_transaction(
         self,
-        amount_mist: int,
+        amount: float,
+        currency: str,
         transaction_digest: str,
         recipient_address: str,
         explorer_url: str = '',
@@ -63,7 +64,8 @@ class TransactionLogger:
         Log a transaction to CSV and JSON files.
         
         Args:
-            amount_mist: Amount in MIST
+            amount: Amount in the specified currency
+            currency: Currency type ('SUI' or 'XRPL')
             transaction_digest: Transaction hash/digest
             recipient_address: Recipient's wallet address
             explorer_url: Block explorer URL
@@ -74,14 +76,13 @@ class TransactionLogger:
         try:
             timestamp = datetime.now().timestamp()
             datetime_str = datetime.now().isoformat()
-            amount_sui = amount_mist / 1_000_000_000
             
             # Log to CSV
             self._log_to_csv(
                 timestamp,
                 datetime_str,
-                amount_mist,
-                amount_sui,
+                currency,
+                amount,
                 transaction_digest,
                 recipient_address,
                 recipient_email,
@@ -94,8 +95,8 @@ class TransactionLogger:
             self._log_to_json(
                 timestamp,
                 datetime_str,
-                amount_mist,
-                amount_sui,
+                currency,
+                amount,
                 transaction_digest,
                 recipient_address,
                 recipient_email,
@@ -104,7 +105,7 @@ class TransactionLogger:
                 status
             )
             
-            print(f"💾 Transaction logged successfully")
+            print(f"💾 {currency} transaction logged successfully")
             
         except Exception as e:
             print(f"⚠️  Error logging transaction: {e}")
@@ -113,8 +114,8 @@ class TransactionLogger:
         self,
         timestamp: float,
         datetime_str: str,
-        amount_mist: int,
-        amount_sui: float,
+        currency: str,
+        amount: float,
         transaction_digest: str,
         recipient_address: str,
         recipient_email: str,
@@ -128,8 +129,8 @@ class TransactionLogger:
             writer.writerow([
                 timestamp,
                 datetime_str,
-                amount_mist,
-                amount_sui,
+                currency,
+                amount,
                 transaction_digest,
                 recipient_address,
                 recipient_email,
@@ -142,8 +143,8 @@ class TransactionLogger:
         self,
         timestamp: float,
         datetime_str: str,
-        amount_mist: int,
-        amount_sui: float,
+        currency: str,
+        amount: float,
         transaction_digest: str,
         recipient_address: str,
         recipient_email: str,
@@ -155,10 +156,8 @@ class TransactionLogger:
         transaction_entry = {
             'timestamp': timestamp,
             'datetime': datetime_str,
-            'amount': {
-                'mist': amount_mist,
-                'sui': amount_sui
-            },
+            'currency': currency,
+            'amount': amount,
             'transaction_digest': transaction_digest,
             'recipient': {
                 'address': recipient_address,
@@ -208,27 +207,35 @@ class TransactionLogger:
     
     def get_total_sent(self) -> Dict[str, float]:
         """
-        Calculate total amount sent across all transactions.
+        Calculate total amount sent across all transactions per currency.
         
         Returns:
-            Dictionary with total amounts in MIST and SUI
+            Dictionary with total amounts by currency {'SUI': X, 'XRPL': Y}
         """
         if not os.path.exists(self.transactions_json):
-            return {'mist': 0, 'sui': 0.0}
+            return {'SUI': 0.0, 'XRPL': 0.0}
         
         try:
             with open(self.transactions_json, 'r') as f:
                 transactions = json.load(f)
                 
-                total_mist = sum(
-                    tx['amount']['mist'] 
-                    for tx in transactions 
-                    if tx['status'] == 'success'
-                )
-                total_sui = total_mist / 1_000_000_000
+                totals = {'SUI': 0.0, 'XRPL': 0.0}
                 
-                return {'mist': total_mist, 'sui': total_sui}
+                for tx in transactions:
+                    if tx['status'] == 'success':
+                        currency = tx.get('currency', 'SUI')  # Default to SUI for old entries
+                        amount = tx.get('amount', 0)
+                        
+                        # Handle old format (with mist/sui nested structure)
+                        if isinstance(amount, dict):
+                            amount = amount.get('sui', 0)
+                            currency = 'SUI'
+                        
+                        if currency in totals:
+                            totals[currency] += amount
+                
+                return totals
         except Exception as e:
             print(f"⚠️  Error calculating total: {e}")
-            return {'mist': 0, 'sui': 0.0}
+            return {'SUI': 0.0, 'XRPL': 0.0}
 
