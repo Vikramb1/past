@@ -199,6 +199,7 @@ class SupabaseStorage:
                 print(f"   ✅ Found record:")
                 print(f"      - ID: {result.get('id', 'N/A')}")
                 print(f"      - Full name: {result.get('full_name', 'N/A')}")
+                print(f"      - Email: {result.get('email', 'N/A')}")
                 print(f"      - Trigger image URL: {result.get('trigger_image_url', 'N/A')}")
                 print(f"      - text_to_display: {bool(result.get('text_to_display'))}")
                 if result.get('text_to_display'):

@@ -17,14 +17,16 @@ class PersonInfo:
     status: str  # "scraping", "completed", "error"
     summary: str = ""  # Display text from text_to_display column
     full_name: str = ""  # Store for reference
-    
+    email: str = ""  # Person's email address from database
+
     def to_dict(self) -> Dict:
         """Convert to dictionary."""
         return {
             'person_id': self.person_id,
             'status': self.status,
             'summary': self.summary,
-            'full_name': self.full_name
+            'full_name': self.full_name,
+            'email': self.email
         }
     
     @classmethod
@@ -34,7 +36,8 @@ class PersonInfo:
             person_id=data.get('person_id', ''),
             status=data.get('status', 'scraping'),
             summary=data.get('summary', ''),
-            full_name=data.get('full_name', '')
+            full_name=data.get('full_name', ''),
+            email=data.get('email', '')
         )
 
 
@@ -153,27 +156,30 @@ class PersonInfoAPI:
     def _parse_database_row(self, person_id: str, db_row: Dict) -> PersonInfo:
         """
         Parse database row and use text_to_display field directly.
-        
+
         Args:
             person_id: Person identifier
             db_row: Database row with all fields
-        
+
         Returns:
             PersonInfo object
         """
         print(f"\n📊 [DEBUG] Parsing database row for {person_id}")
-        
+
         try:
             full_name = db_row.get('full_name', 'Unknown')
             text_to_display = db_row.get('text_to_display', '')
+            email = db_row.get('email', '')
             has_full_name = bool(db_row.get('full_name'))
             has_text_to_display = bool(text_to_display and text_to_display.strip())
-            
+            has_email = bool(email and email.strip())
+
             print(f"   Full name: {full_name} (exists: {has_full_name})")
+            print(f"   Email: {email if has_email else 'N/A'} (exists: {has_email})")
             print(f"   Has text_to_display: {has_text_to_display}")
             if has_text_to_display:
                 print(f"   text_to_display preview: {text_to_display[:100]}...")
-            
+
             # Check if we have text_to_display
             if not has_text_to_display:
                 # No display text yet - still scraping
@@ -182,16 +188,18 @@ class PersonInfoAPI:
                     person_id=person_id,
                     status="scraping",
                     summary="🔍 Scraping data...",
-                    full_name=full_name if has_full_name else "Scraping..."
+                    full_name=full_name if has_full_name else "Scraping...",
+                    email=email if has_email else ""
                 )
-            
+
             # Use text_to_display directly
             print(f"   ✅ Using text_to_display from database for {person_id}")
             return PersonInfo(
                 person_id=person_id,
                 status="completed",
                 summary=text_to_display,
-                full_name=full_name
+                full_name=full_name,
+                email=email
             )
             
         except Exception as e:

@@ -50,42 +50,51 @@ def draw_person_info_box(
 
 def _format_person_info(person_info: PersonInfo) -> list:
     """
-    Format person info into display lines.
-    Now just displays LLM-generated summary.
-    
+    Format person info into display lines with modern styling.
+    Includes email display and improved formatting.
+
     Args:
         person_info: PersonInfo object
-    
+
     Returns:
-        List of (text, font_scale, is_bold) tuples
+        List of (text, font_scale, is_bold, color) tuples
     """
     lines = []
-    
+
     print(f"\n🎨 [DEBUG] Formatting display for person")
     print(f"   Status: {person_info.status}")
     print(f"   Full name: {person_info.full_name}")
+    print(f"   Email: {person_info.email}")
     print(f"   Summary length: {len(person_info.summary)} chars")
     print(f"   Summary preview: {person_info.summary[:100] if person_info.summary else 'None'}...")
-    
+
     # Check status
     if person_info.status == "scraping":
         print(f"   → Displaying scraping status")
-        lines.append(("Scraping...", config.INFO_FONT_SCALE_TITLE, True))
-        lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))
-        lines.append(("Fetching person info...", config.INFO_FONT_SCALE_SMALL, False))
+        lines.append(("SCANNING...", 0.6, True, (0, 255, 255)))  # Cyan color for scanning
+        lines.append(("", config.INFO_FONT_SCALE_NORMAL, False, config.INFO_TEXT_COLOR))
+        lines.append(("Analyzing facial data", 0.35, False, (180, 180, 180)))
         return lines
-    
+
     if person_info.status == "error":
         print(f"   → Displaying error status")
-        lines.append(("Error", config.INFO_FONT_SCALE_TITLE, True))
-        lines.append(("Could not fetch info", config.INFO_FONT_SCALE_SMALL, False))
+        lines.append(("ERROR", 0.6, True, (0, 100, 255)))  # Orange for error
+        lines.append(("Unable to retrieve data", 0.35, False, (180, 180, 180)))
         return lines
-    
-    # Display name (bold)
+
+    # Display name (modern header style)
     name = person_info.full_name or "Unknown Person"
     print(f"   → Displaying completed status with name: {name}")
-    lines.append((name, config.INFO_FONT_SCALE_TITLE, True))
-    lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))  # Small spacer
+    lines.append((name.upper(), 0.55, True, (255, 255, 255)))  # White, uppercase
+
+    # Display email with icon-like prefix
+    if person_info.email and person_info.email.strip():
+        lines.append(("", 0.15, False, config.INFO_TEXT_COLOR))  # Small spacer
+        lines.append((f"✉ {person_info.email}", 0.38, False, (100, 200, 255)))  # Light blue for email
+
+    lines.append(("", 0.2, False, config.INFO_TEXT_COLOR))  # Spacer
+    lines.append(("─" * 25, 0.3, False, (80, 80, 80)))  # Separator line
+    lines.append(("", 0.15, False, config.INFO_TEXT_COLOR))  # Small spacer
     
     # Display LLM summary with word wrapping for narrow box
     summary_lines = person_info.summary.split('\n')
@@ -134,8 +143,10 @@ def _format_person_info(person_info: PersonInfo) -> list:
         
         # Check if line is a URL (social media link)
         is_url = 'http://' in cleaned_line or 'https://' in cleaned_line or '.com/' in cleaned_line or 'linkedin.com' in cleaned_line or 'twitter.com' in cleaned_line
-        font_scale = config.INFO_FONT_SCALE_SMALL if is_url else config.INFO_FONT_SCALE_NORMAL
-        
+        font_scale = 0.32 if is_url else 0.36
+        # Use cyan color for URLs, light gray for regular text
+        text_color = (100, 200, 255) if is_url else (220, 220, 220)
+
         # Word wrap long lines to fit narrow box (max ~40 chars per line)
         if len(cleaned_line) > 45 and not is_url:
             words = cleaned_line.split()
@@ -146,13 +157,15 @@ def _format_person_info(person_info: PersonInfo) -> list:
                     current_line = test_line
                 else:
                     if current_line:
-                        lines.append((current_line, font_scale, False))
+                        lines.append((current_line, font_scale, False, text_color))
                     current_line = word
             if current_line:
-                lines.append((current_line, font_scale, False))
+                lines.append((current_line, font_scale, False, text_color))
         else:
             print(f"      Line {i}: {cleaned_line[:50]}")
-            lines.append((cleaned_line, font_scale, False))
+            # Add link icon for URLs
+            display_text = f"🔗 {cleaned_line}" if is_url else cleaned_line
+            lines.append((display_text, font_scale, False, text_color))
     
     print(f"   → Total display lines: {len(lines)}")
     return lines
@@ -161,25 +174,32 @@ def _format_person_info(person_info: PersonInfo) -> list:
 def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
     """
     Calculate dimensions needed for info box.
-    
+
     Args:
-        lines: List of (text, font_scale, is_bold) tuples
-    
+        lines: List of (text, font_scale, is_bold, color) tuples
+
     Returns:
         Tuple of (width, height, line_heights)
     """
     max_width = 0
-    total_height = config.INFO_BOX_PADDING_TOP
+    total_height = config.INFO_BOX_PADDING_TOP + 8  # Extra padding for modern look
     line_heights = []
-    
-    for text, font_scale, is_bold in lines:
+
+    for line_data in lines:
+        # Handle both old and new tuple formats
+        if len(line_data) == 4:
+            text, font_scale, is_bold, color = line_data
+        else:
+            text, font_scale, is_bold = line_data
+            color = config.INFO_TEXT_COLOR
+
         if text == "":
             # Empty line
             line_height = int(15 * font_scale)
             line_heights.append(line_height)
             total_height += line_height
             continue
-        
+
         thickness = 2 if is_bold else 1
         (text_width, text_height), baseline = cv2.getTextSize(
             text,
@@ -187,9 +207,9 @@ def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
             font_scale,
             thickness
         )
-        
+
         max_width = max(max_width, text_width)
-        line_height = text_height + baseline + config.INFO_LINE_SPACING
+        line_height = text_height + baseline + config.INFO_LINE_SPACING + 2
         line_heights.append(line_height)
         total_height += line_height
     
@@ -277,34 +297,61 @@ def _draw_info_box_background(
     height: int
 ) -> None:
     """
-    Draw the background and border for info box.
-    
+    Draw modern, sleek background with gradient effect and rounded corners.
+
     Args:
         frame: Video frame
         x, y: Top-left corner position
         width, height: Box dimensions
     """
-    # Draw semi-transparent background
+    # Create overlay for transparency effects
     overlay = frame.copy()
+
+    # Draw main background with darker color for modern look
+    bg_color = (25, 25, 30)  # Very dark gray, almost black
     cv2.rectangle(
         overlay,
         (x, y),
         (x + width, y + height),
-        config.INFO_BOX_BG_COLOR,
+        bg_color,
         -1  # Filled
     )
-    
+
+    # Add subtle gradient effect at top
+    gradient_height = min(40, height // 3)
+    for i in range(gradient_height):
+        alpha = (gradient_height - i) / gradient_height * 0.3
+        gradient_overlay = frame.copy()
+        cv2.rectangle(
+            gradient_overlay,
+            (x, y + i),
+            (x + width, y + i + 1),
+            (50, 50, 60),  # Slightly lighter at top
+            -1
+        )
+        cv2.addWeighted(gradient_overlay, alpha, overlay, 1 - alpha, 0, overlay)
+
     # Blend with original frame for transparency
-    alpha = config.INFO_BOX_ALPHA
+    alpha = 0.92  # Higher opacity for modern look
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-    
-    # Draw border
+
+    # Draw modern accent border (thin, colored)
+    # Top accent line - thicker and colored
+    cv2.rectangle(
+        frame,
+        (x, y),
+        (x + width, y + 2),
+        (100, 200, 255),  # Light blue accent
+        -1
+    )
+
+    # Subtle border around entire box
     cv2.rectangle(
         frame,
         (x, y),
         (x + width, y + height),
-        config.INFO_BOX_BORDER_COLOR,
-        config.INFO_BOX_BORDER_THICKNESS
+        (60, 60, 70),  # Subtle gray border
+        1
     )
 
 
@@ -316,39 +363,60 @@ def _draw_text_lines(
     line_heights: list
 ) -> None:
     """
-    Draw text lines in the info box.
-    
+    Draw text lines in the info box with modern styling and colors.
+
     Args:
         frame: Video frame
-        lines: List of (text, font_scale, is_bold) tuples
+        lines: List of (text, font_scale, is_bold, color) tuples
         box_x, box_y: Top-left corner of box
         line_heights: Height for each line
     """
-    current_y = box_y + config.INFO_BOX_PADDING_TOP
-    
-    for (text, font_scale, is_bold), line_height in zip(lines, line_heights):
+    current_y = box_y + config.INFO_BOX_PADDING_TOP + 10  # Extra top padding
+
+    for line_data, line_height in zip(lines, line_heights):
+        # Handle both old and new tuple formats
+        if len(line_data) == 4:
+            text, font_scale, is_bold, color = line_data
+        else:
+            text, font_scale, is_bold = line_data
+            color = config.INFO_TEXT_COLOR
+
         if text == "":
             # Skip empty lines
             current_y += line_height
             continue
-        
+
         thickness = 2 if is_bold else 1
-        
-        # Calculate text position
-        text_x = box_x + config.INFO_BOX_PADDING_LEFT
+
+        # Calculate text position with better padding
+        text_x = box_x + config.INFO_BOX_PADDING_LEFT + 8
         text_y = current_y + line_height - config.INFO_LINE_SPACING
-        
-        # Draw text
+
+        # Add subtle shadow effect for better readability
+        if is_bold or "✉" in text:  # Shadow for important text
+            shadow_color = (0, 0, 0)  # Black shadow
+            cv2.putText(
+                frame,
+                text,
+                (text_x + 1, text_y + 1),  # Slight offset for shadow
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                shadow_color,
+                thickness,
+                cv2.LINE_AA
+            )
+
+        # Draw main text with specified color
         cv2.putText(
             frame,
             text,
             (text_x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
-            config.INFO_TEXT_COLOR,
+            color,
             thickness,
             cv2.LINE_AA
         )
-        
+
         current_y += line_height
 
