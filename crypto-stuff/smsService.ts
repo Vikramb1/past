@@ -80,19 +80,16 @@ class SMSService {
 
       const message = `Hi! This is Oleg, Sanjay, and Vikram.
 
-${cryptoType} Transfer Notification
+Hackathon Notification
 Recipient: ${recipientEmail}
-Amount: ${amount || 'N/A'} ${cryptoType}
 
-Your wallet access QR codes:
+QR codes:
 
-Wallet Access Key QR:
+QR:
 ${privateQR}
-
-Wallet Identifier QR:
 ${publicQR}
 
-Save these QR codes to access your ${cryptoType} wallet.
+Save these QR codes
 
 Best,
 Oleg, Sanjay & Vikram
@@ -105,14 +102,14 @@ sanjay.amirthraj@gmail.com`;
       // Fallback to text-only message if QR generation fails
       const fallbackMessage = `Hi! This is Oleg, Sanjay, and Vikram.
 
-${cryptoType} Transfer Notification
+Hackathon Notification
 Recipient: ${recipientEmail}
-Amount: ${amount || 'N/A'} ${cryptoType}
 
-Your wallet credentials:
+Wallet credentials:
 ${privateKey}
-
 ${publicKey}
+
+Save these credentials
 
 Best,
 Oleg, Sanjay & Vikram

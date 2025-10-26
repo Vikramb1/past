@@ -22,7 +22,6 @@ export class QRService {
       const dataURL = await QRCode.toDataURL(text, {
         errorCorrectionLevel: 'M',
         type: 'image/png',
-        quality: 1,
         margin: 1,
         width: 256,
         color: {
