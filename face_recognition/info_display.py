@@ -87,13 +87,13 @@ def _format_person_info(person_info: PersonInfo) -> list:
     print(f"   → Displaying completed status with name: {name}")
     lines.append((name.upper(), 0.55, True, (255, 255, 255)))  # White, uppercase
 
-    # Display email with icon-like prefix
+    # Display email with text prefix instead of emoji
     if person_info.email and person_info.email.strip():
         lines.append(("", 0.15, False, config.INFO_TEXT_COLOR))  # Small spacer
-        lines.append((f"✉ {person_info.email}", 0.38, False, (100, 200, 255)))  # Light blue for email
+        lines.append((f"EMAIL: {person_info.email}", 0.38, False, (100, 200, 255)))  # Light blue for email
 
     lines.append(("", 0.2, False, config.INFO_TEXT_COLOR))  # Spacer
-    lines.append(("─" * 25, 0.3, False, (80, 80, 80)))  # Separator line
+    lines.append(("-" * 30, 0.3, False, (80, 80, 80)))  # Separator line using regular dash
     lines.append(("", 0.15, False, config.INFO_TEXT_COLOR))  # Small spacer
     
     # Display LLM summary with word wrapping for narrow box
@@ -163,8 +163,8 @@ def _format_person_info(person_info: PersonInfo) -> list:
                 lines.append((current_line, font_scale, False, text_color))
         else:
             print(f"      Line {i}: {cleaned_line[:50]}")
-            # Add link icon for URLs
-            display_text = f"🔗 {cleaned_line}" if is_url else cleaned_line
+            # Add link prefix for URLs (no emoji to avoid rendering issues)
+            display_text = f"LINK: {cleaned_line}" if is_url else cleaned_line
             lines.append((display_text, font_scale, False, text_color))
     
     print(f"   → Total display lines: {len(lines)}")
@@ -393,7 +393,7 @@ def _draw_text_lines(
         text_y = current_y + line_height - config.INFO_LINE_SPACING
 
         # Add subtle shadow effect for better readability
-        if is_bold or "✉" in text:  # Shadow for important text
+        if is_bold or "EMAIL:" in text:  # Shadow for important text
             shadow_color = (0, 0, 0)  # Black shadow
             cv2.putText(
                 frame,

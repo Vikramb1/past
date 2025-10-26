@@ -141,7 +141,7 @@ class PersonInfoAPI:
                 return PersonInfo(
                     person_id=person_id,
                     status="scraping",
-                    summary="🔍 Scraping..."
+                    summary="Scraping..."
                 )
             
             # Parse with LLM
@@ -187,7 +187,7 @@ class PersonInfoAPI:
                 return PersonInfo(
                     person_id=person_id,
                     status="scraping",
-                    summary="🔍 Scraping data...",
+                    summary="Scraping data...",
                     full_name=full_name if has_full_name else "Scraping...",
                     email=email if has_email else ""
                 )
