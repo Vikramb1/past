@@ -53,6 +53,7 @@ class GestureDetector:
         self.gesture_cooldowns = {}  # Prevent repeated triggers
         self.last_detection_time = {}
         self.gesture_states = {}  # Track current gesture state per hand
+        self.peace_stability = {}  # Track peace sign stability over frames
         
         print(f"Gesture detector initialized")
         print(f"Detection confidence: {config.GESTURE_DETECTION_CONFIDENCE}")
@@ -183,7 +184,8 @@ class GestureDetector:
         frame_shape: Tuple[int, int, int]
     ) -> Tuple[bool, float]:
         """
-        Detect peace sign gesture (index and middle fingers extended, others folded).
+        Detect peace sign gesture with robust multi-criteria checking.
+        Requires temporal stability (multiple consecutive frames) for reliable detection.
 
         Args:
             hand_landmarks: MediaPipe hand landmarks
@@ -204,8 +206,11 @@ class GestureDetector:
         pinky_tip = hand_landmarks.landmark[20]
 
         # PIPs (middle joints) - used to check if fingers are extended
+        thumb_ip = hand_landmarks.landmark[3]
         index_pip = hand_landmarks.landmark[6]
+        index_dip = hand_landmarks.landmark[7]
         middle_pip = hand_landmarks.landmark[10]
+        middle_dip = hand_landmarks.landmark[11]
         ring_pip = hand_landmarks.landmark[14]
         pinky_pip = hand_landmarks.landmark[18]
 
@@ -214,63 +219,156 @@ class GestureDetector:
         middle_mcp = hand_landmarks.landmark[9]
         ring_mcp = hand_landmarks.landmark[13]
         pinky_mcp = hand_landmarks.landmark[17]
+        thumb_mcp = hand_landmarks.landmark[2]
 
         # Wrist for reference
         wrist = hand_landmarks.landmark[0]
 
-        # Check if index and middle fingers are extended
-        # Fingers are extended if tip is higher than PIP and PIP is higher than MCP (in y-axis)
-        index_extended = (index_tip.y < index_pip.y < index_mcp.y)
-        middle_extended = (middle_tip.y < middle_pip.y < middle_mcp.y)
+        # Convert to pixel coordinates for distance calculations
+        def to_pixels(landmark):
+            return np.array([landmark.x * w, landmark.y * h])
 
-        # Check if other fingers are folded
-        # Fingers are folded if tip is close to or below MCP
-        ring_folded = (ring_tip.y >= ring_mcp.y - 0.05)  # Small tolerance
-        pinky_folded = (pinky_tip.y >= pinky_mcp.y - 0.05)
+        index_tip_px = to_pixels(index_tip)
+        middle_tip_px = to_pixels(middle_tip)
+        ring_tip_px = to_pixels(ring_tip)
+        pinky_tip_px = to_pixels(pinky_tip)
+        thumb_tip_px = to_pixels(thumb_tip)
+        wrist_px = to_pixels(wrist)
+        index_mcp_px = to_pixels(index_mcp)
+        palm_center_px = to_pixels(hand_landmarks.landmark[9])  # Middle finger MCP as palm reference
 
-        # Thumb can be in various positions, but typically folded or to the side
-        # Check if thumb is not extended upward
-        thumb_not_up = (thumb_tip.y >= index_mcp.y - 0.1)
-
-        # Check if index and middle fingers are close together (typical for peace sign)
-        index_middle_distance = abs(index_tip.x - middle_tip.x)
-        fingers_close = index_middle_distance < 0.15  # Normalized distance
-
-        # Peace sign criteria
-        is_peace = (
-            index_extended and
-            middle_extended and
-            ring_folded and
-            pinky_folded and
-            thumb_not_up and
-            fingers_close
+        # 1. Check if index and middle fingers are FULLY extended
+        # More robust: check all joints from tip to base
+        index_extended = (
+            index_tip.y < index_dip.y < index_pip.y < index_mcp.y and
+            (index_tip.y < index_mcp.y - 0.1)  # Significant extension
+        )
+        middle_extended = (
+            middle_tip.y < middle_dip.y < middle_pip.y < middle_mcp.y and
+            (middle_tip.y < middle_mcp.y - 0.1)  # Significant extension
         )
 
-        # Calculate confidence based on how well criteria are met
+        # 2. Check if ring and pinky are CLEARLY folded
+        # More robust: tips should be closer to palm than MCPs
+        ring_folded = (ring_tip.y >= ring_mcp.y - 0.03)
+        pinky_folded = (pinky_tip.y >= pinky_mcp.y - 0.03)
+        
+        # Additional check: ring and pinky should be close to palm
+        ring_to_palm_dist = np.linalg.norm(ring_tip_px - palm_center_px)
+        pinky_to_palm_dist = np.linalg.norm(pinky_tip_px - palm_center_px)
+        hand_size = np.linalg.norm(index_mcp_px - wrist_px)
+        ring_close_to_palm = ring_to_palm_dist < hand_size * 0.6
+        pinky_close_to_palm = pinky_to_palm_dist < hand_size * 0.7
+
+        # 3. Check thumb position (should not be extended upward)
+        thumb_not_up = (thumb_tip.y >= thumb_mcp.y - 0.05)
+
+        # 4. Check finger spacing - peace sign has moderate separation
+        index_middle_distance_px = np.linalg.norm(index_tip_px - middle_tip_px)
+        index_middle_distance_norm = index_middle_distance_px / hand_size
+        
+        # Peace sign: fingers slightly separated but not too far apart
+        fingers_properly_spaced = (0.15 < index_middle_distance_norm < 0.5)
+
+        # 5. Check finger angles (should point roughly upward)
+        index_vector = index_tip_px - index_mcp_px
+        middle_vector = middle_tip_px - to_pixels(middle_mcp)
+        
+        # Calculate angles from vertical
+        index_angle = np.degrees(np.arctan2(index_vector[0], -index_vector[1]))
+        middle_angle = np.degrees(np.arctan2(middle_vector[0], -middle_vector[1]))
+        
+        # Fingers should point generally upward (within 45 degrees of vertical)
+        index_upright = abs(index_angle) < 50
+        middle_upright = abs(middle_angle) < 50
+        
+        # Fingers should be roughly parallel (similar angles)
+        fingers_parallel = abs(index_angle - middle_angle) < 30
+
+        # 6. Check that extended fingers are significantly longer than folded ones
+        index_length = np.linalg.norm(index_tip_px - index_mcp_px)
+        middle_length = np.linalg.norm(middle_tip_px - to_pixels(middle_mcp))
+        ring_length = np.linalg.norm(ring_tip_px - to_pixels(ring_mcp))
+        
+        extended_significantly_longer = (
+            index_length > ring_length * 1.3 and
+            middle_length > ring_length * 1.3
+        )
+
+        # Combine all criteria with scoring
+        criteria = {
+            'index_extended': index_extended,
+            'middle_extended': middle_extended,
+            'ring_folded': ring_folded and ring_close_to_palm,
+            'pinky_folded': pinky_folded and pinky_close_to_palm,
+            'thumb_not_up': thumb_not_up,
+            'fingers_spaced': fingers_properly_spaced,
+            'index_upright': index_upright,
+            'middle_upright': middle_upright,
+            'fingers_parallel': fingers_parallel,
+            'length_check': extended_significantly_longer
+        }
+        
+        # Count how many criteria are met
+        criteria_met = sum(criteria.values())
+        total_criteria = len(criteria)
+        
+        # Require at least 8 out of 10 criteria to be met
+        is_peace_candidate = criteria_met >= 8
+
+        # Initialize stability tracking
+        if hand_id not in self.peace_stability:
+            self.peace_stability[hand_id] = {
+                'frames': [],
+                'last_update': time.time()
+            }
+
+        current_time = time.time()
+        stability = self.peace_stability[hand_id]
+        
+        # Clear old frames (older than 0.5 seconds)
+        stability['frames'] = [
+            f for f in stability['frames'] 
+            if current_time - f['time'] < 0.5
+        ]
+        
+        # Add current detection
+        if is_peace_candidate:
+            stability['frames'].append({
+                'time': current_time,
+                'confidence': criteria_met / total_criteria,
+                'criteria': criteria
+            })
+        
+        # Require stable detection over at least 3 consecutive frames (roughly 0.1-0.15 seconds)
+        stable_frames = len(stability['frames'])
+        is_peace = is_peace_candidate and stable_frames >= 3
+
+        # Calculate confidence
         confidence = 0.0
         if is_peace:
-            # Base confidence
-            confidence = 0.7
-
-            # Bonus for very clear extension
-            if index_tip.y < index_pip.y - 0.1 and middle_tip.y < middle_pip.y - 0.1:
-                confidence += 0.15
-
-            # Bonus for fingers being close together
-            if index_middle_distance < 0.1:
-                confidence += 0.15
-
-            confidence = min(1.0, confidence)
+            # Base confidence from criteria
+            confidence = criteria_met / total_criteria
+            
+            # Bonus for stability
+            if stable_frames >= 5:
+                confidence = min(1.0, confidence + 0.1)
 
             # Check cooldown to prevent spam
-            current_time = time.time()
-            if hand_id in self.gesture_cooldowns:
-                if current_time - self.gesture_cooldowns[hand_id] < config.GESTURE_COOLDOWN_SECONDS:
+            cooldown_key = f"peace_{hand_id}"
+            if cooldown_key in self.gesture_cooldowns:
+                if current_time - self.gesture_cooldowns[cooldown_key] < config.GESTURE_COOLDOWN_SECONDS:
                     return False, 0.0
 
             # Update cooldown
-            self.gesture_cooldowns[hand_id] = current_time
-            print(f"✌️ PEACE SIGN detected! Hand: {hand_id}, Confidence: {confidence:.2f}")
+            self.gesture_cooldowns[cooldown_key] = current_time
+            
+            # Clear stability after detection
+            stability['frames'] = []
+            
+            print(f"✌️ PEACE SIGN detected! Hand: {hand_id}, Confidence: {confidence:.2f}, "
+                  f"Criteria: {criteria_met}/{total_criteria}, Stable frames: {stable_frames}")
+            print(f"   Details: {', '.join([k for k, v in criteria.items() if v])}")
 
         return is_peace, confidence
 
@@ -508,6 +606,7 @@ class GestureDetector:
         self.gesture_cooldowns = {}
         self.last_detection_time = {}
         self.gesture_states = {}
+        self.peace_stability = {}
     
     def close(self):
         """Clean up resources."""

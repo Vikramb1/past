@@ -29,7 +29,7 @@ NUMBER_OF_TIMES_TO_UPSAMPLE = 1  # Higher = more accurate but slower (better for
 
 # Face recognition settings
 RECOGNITION_TOLERANCE = 0.6  # Lower = more strict, higher = more lenient (default: 0.6)
-MIN_CONFIDENCE = 0.5  # Minimum confidence for recognition
+MIN_CONFIDENCE = 0.45  # Minimum confidence for recognition
 
 # Face encoding quality settings (for robust recognition)
 ENCODING_NUM_JITTERS = 3  # Number of times to resample face for robust encoding (default: 1)
@@ -65,6 +65,7 @@ SAVE_FACE_SIZE = (200, 200)  # Size to save face crops
 # Face tracking settings (auto-save detected faces)
 AUTO_SAVE_DETECTED_FACES = True  # Automatically save all detected faces
 DUPLICATE_THRESHOLD = 0.45  # Face distance threshold for duplicate detection (lower = stricter)
+DETECTION_STABILITY_FRAMES = 5  # Require N consecutive frames before saving (reduces false positives)
 
 # Face quality settings (prevent blurry faces)
 ENABLE_QUALITY_CHECK = True  # Only save sharp, non-blurry faces
