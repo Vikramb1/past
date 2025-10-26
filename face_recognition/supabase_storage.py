@@ -165,4 +165,51 @@ class SupabaseStorage:
         except Exception as e:
             print(f"⚠️  Failed to get public URL: {e}")
             return None
+    
+    def query_face_search(self, image_filename: str) -> Optional[dict]:
+        """
+        Query face_searches table for a specific image.
+        Matches on trigger_image_url containing the filename.
+        
+        Args:
+            image_filename: Image filename to search for (e.g., "person_001_1729901234.png")
+        
+        Returns:
+            Database row as dict or None if not found
+        """
+        print(f"\n💾 [DEBUG] Querying Supabase for: {image_filename}")
+        
+        if not self.client:
+            print("⚠️  Supabase client not initialized")
+            return None
+        
+        try:
+            print(f"   Table: face_searches")
+            print(f"   Query: trigger_image_url LIKE '%{image_filename}%'")
+            
+            response = self.client.table('face_searches') \
+                .select('*') \
+                .like('trigger_image_url', f'%{image_filename}%') \
+                .execute()
+            
+            print(f"   Results found: {len(response.data) if response.data else 0}")
+            
+            if response.data and len(response.data) > 0:
+                result = response.data[0]
+                print(f"   ✅ Found record:")
+                print(f"      - ID: {result.get('id', 'N/A')}")
+                print(f"      - Full name: {result.get('full_name', 'N/A')}")
+                print(f"      - Trigger image URL: {result.get('trigger_image_url', 'N/A')}")
+                print(f"      - Social media: {bool(result.get('social_media'))}")
+                print(f"      - Nyne AI response: {bool(result.get('nyne_ai_response'))}")
+                print(f"      - Google image results: {bool(result.get('google_image_results'))}")
+                return result
+            else:
+                print(f"   ℹ️  No records found")
+            return None
+        except Exception as e:
+            print(f"⚠️  Error querying face_searches: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 

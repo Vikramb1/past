@@ -220,3 +220,63 @@ def convert_bgr_to_rgb(image: np.ndarray) -> np.ndarray:
     """
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+
+def preprocess_face_image(image: np.ndarray) -> np.ndarray:
+    """
+    Normalize lighting and improve contrast for better face detection.
+    
+    Args:
+        image: Input image in BGR format
+    
+    Returns:
+        Preprocessed image with normalized lighting
+    """
+    # Convert to LAB color space for better lighting normalization
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l_enhanced = clahe.apply(l)
+    
+    # Merge channels back
+    enhanced_lab = cv2.merge([l_enhanced, a, b])
+    
+    # Convert back to BGR
+    enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+    
+    return enhanced
+
+
+def enhance_frame_for_detection(frame: np.ndarray) -> np.ndarray:
+    """
+    Apply preprocessing optimized for face detection.
+    Less aggressive than full preprocessing to maintain real-time performance.
+    
+    Args:
+        frame: Input frame in BGR or RGB format
+    
+    Returns:
+        Enhanced frame with improved contrast and lighting
+    """
+    # Light histogram equalization
+    # Works with both BGR and RGB
+    if len(frame.shape) == 3:
+        # Color image - work in YCrCb space
+        ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+        y, cr, cb = cv2.split(ycrcb)
+        
+        # Apply light CLAHE to luminance channel
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+        y_enhanced = clahe.apply(y)
+        
+        # Merge back
+        ycrcb_enhanced = cv2.merge([y_enhanced, cr, cb])
+        enhanced = cv2.cvtColor(ycrcb_enhanced, cv2.COLOR_YCrCb2BGR)
+        
+        return enhanced
+    else:
+        # Grayscale
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+        return clahe.apply(frame)
+

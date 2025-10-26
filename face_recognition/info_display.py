@@ -51,6 +51,7 @@ def draw_person_info_box(
 def _format_person_info(person_info: PersonInfo) -> list:
     """
     Format person info into display lines.
+    Now just displays LLM-generated summary.
     
     Args:
         person_info: PersonInfo object
@@ -60,33 +61,41 @@ def _format_person_info(person_info: PersonInfo) -> list:
     """
     lines = []
     
-    # Name (bold, larger)
-    lines.append((person_info.name, config.INFO_FONT_SCALE_TITLE, True))
+    print(f"\n🎨 [DEBUG] Formatting display for person")
+    print(f"   Status: {person_info.status}")
+    print(f"   Full name: {person_info.full_name}")
+    print(f"   Summary length: {len(person_info.summary)} chars")
+    print(f"   Summary preview: {person_info.summary[:100] if person_info.summary else 'None'}...")
     
-    # Email
-    lines.append((f"📧 {person_info.email}", config.INFO_FONT_SCALE_NORMAL, False))
+    # Check status
+    if person_info.status == "scraping":
+        print(f"   → Displaying scraping status")
+        lines.append(("🔍 Scraping...", config.INFO_FONT_SCALE_TITLE, True))
+        lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))
+        lines.append(("Fetching person info...", config.INFO_FONT_SCALE_SMALL, False))
+        return lines
     
-    # Phone
-    lines.append((f"📞 {person_info.phone}", config.INFO_FONT_SCALE_NORMAL, False))
+    if person_info.status == "error":
+        print(f"   → Displaying error status")
+        lines.append(("❌ Error", config.INFO_FONT_SCALE_TITLE, True))
+        lines.append(("Could not fetch info", config.INFO_FONT_SCALE_SMALL, False))
+        return lines
     
-    # Empty line
-    lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))
+    # Display name (bold)
+    name = person_info.full_name or "Unknown Person"
+    print(f"   → Displaying completed status with name: {name}")
+    lines.append((name, config.INFO_FONT_SCALE_TITLE, True))
+    lines.append(("", config.INFO_FONT_SCALE_NORMAL, False))  # Spacer
     
-    # Employment history
-    if person_info.employment_history:
-        lines.append(("Employment:", config.INFO_FONT_SCALE_NORMAL, True))
-        
-        for entry in person_info.employment_history:
-            # Role and company
-            role_line = f"• {entry.role}"
-            lines.append((role_line, config.INFO_FONT_SCALE_SMALL, False))
-            
-            company_line = f"  {entry.company}"
-            lines.append((company_line, config.INFO_FONT_SCALE_SMALL, False))
-            
-            years_line = f"  {entry.years}"
-            lines.append((years_line, config.INFO_FONT_SCALE_SMALL, False))
+    # Display LLM summary (already formatted with bullets)
+    summary_lines = person_info.summary.split('\n')
+    print(f"   → Summary has {len(summary_lines)} lines")
+    for i, line in enumerate(summary_lines):
+        if line.strip():
+            print(f"      Line {i}: {line.strip()[:50]}...")
+            lines.append((line.strip(), config.INFO_FONT_SCALE_SMALL, False))
     
+    print(f"   → Total display lines: {len(lines)}")
     return lines
 
 

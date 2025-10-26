@@ -6,6 +6,7 @@ import numpy as np
 from typing import List, Tuple, Optional
 import time
 import config
+import utils
 from face_database import FaceDatabase
 from face_tracker import FaceTracker
 
@@ -74,11 +75,14 @@ class FaceEngine:
                 self.last_tracked_ids
             )
         
+        # Apply preprocessing for better detection in varying lighting conditions
+        preprocessed_frame = utils.enhance_frame_for_detection(frame)
+        
         # Scale down frame for faster detection
         if scale != 1.0:
-            small_frame = self._scale_frame(frame, scale)
+            small_frame = self._scale_frame(preprocessed_frame, scale)
         else:
-            small_frame = frame
+            small_frame = preprocessed_frame
         
         # Detect faces
         face_locations = face_recognition.face_locations(
@@ -103,8 +107,13 @@ class FaceEngine:
         if scale != 1.0:
             face_locations = self._scale_face_locations(face_locations, 1.0 / scale)
         
-        # Get face encodings
-        face_encodings = face_recognition.face_encodings(frame, face_locations)
+        # Get face encodings with robust sampling
+        face_encodings = face_recognition.face_encodings(
+            frame,
+            face_locations,
+            num_jitters=config.ENCODING_NUM_JITTERS,
+            model=config.ENCODING_MODEL
+        )
         
         # Recognize faces
         face_names = []

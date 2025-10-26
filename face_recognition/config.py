@@ -25,11 +25,15 @@ DISPLAY_HEIGHT = 720
 DETECTION_MODEL = "hog"  # Options: "hog" (fast, CPU) or "cnn" (accurate, GPU)
 DETECTION_SCALE = 0.25  # Scale down frames for faster detection (0.25 = 1/4 size)
 PROCESS_EVERY_N_FRAMES = 2  # Process every Nth frame for recognition
-NUMBER_OF_TIMES_TO_UPSAMPLE = 1  # Higher = more accurate but slower
+NUMBER_OF_TIMES_TO_UPSAMPLE = 1  # Higher = more accurate but slower (better for small/distant faces)
 
 # Face recognition settings
 RECOGNITION_TOLERANCE = 0.6  # Lower = more strict, higher = more lenient (default: 0.6)
 MIN_CONFIDENCE = 0.5  # Minimum confidence for recognition
+
+# Face encoding quality settings (for robust recognition)
+ENCODING_NUM_JITTERS = 3  # Number of times to resample face for robust encoding (default: 1)
+ENCODING_MODEL = 'large'   # 'small' or 'large' - large is more accurate for encodings
 
 # Performance settings
 MAX_FACES_TO_PROCESS = 10  # Maximum number of faces to process per frame
@@ -68,6 +72,10 @@ QUALITY_SHARPNESS_THRESHOLD = 100.0  # Minimum sharpness score (100 = balanced)
 ENABLE_PERSON_INFO_API = True  # Fetch and display person information
 API_CALL_DELAY = 0.5  # Simulated API delay in seconds (for dummy API)
 INFO_DISPLAY_POSITION = "right"  # Position relative to face: "right", "left", "top", "bottom"
+
+# Person info polling settings (for Supabase integration)
+PERSON_INFO_POLL_INTERVAL = 1.0  # Poll every 1 second for scraping data
+PERSON_INFO_MAX_POLL_TIME = 300  # Stop polling after 5 minutes
 
 # Info box display settings
 INFO_BOX_BG_COLOR = (40, 40, 40)  # Dark gray background (BGR)

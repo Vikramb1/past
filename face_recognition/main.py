@@ -72,7 +72,7 @@ class FaceRecognitionApp:
         
         # Initialize person info API if enabled
         if config.ENABLE_PERSON_INFO_API:
-            self.person_api = get_api_instance()
+            self.person_api = get_api_instance(face_tracker=self.face_tracker)
         else:
             self.person_api = None
         
@@ -187,8 +187,15 @@ class FaceRecognitionApp:
                 if self.person_api and self.face_tracker:
                     for tracked_id in tracked_ids:
                         if tracked_id and not self.face_tracker.has_api_data(tracked_id):
-                            # Call API for new person
-                            person_info = self.person_api.get_person_info(tracked_id)
+                            # Get registry entry to get image filename
+                            registry_entry = self.face_tracker.get_person_info(tracked_id)
+                            image_filename = registry_entry.get('image_filename') if registry_entry else None
+                            
+                            # Call API for new person with image filename
+                            person_info = self.person_api.get_person_info(
+                                person_id=tracked_id,
+                                image_filename=image_filename
+                            )
                             if person_info:
                                 # Store API response in tracker
                                 self.face_tracker.store_api_response(
@@ -381,16 +388,23 @@ class FaceRecognitionApp:
                 api_data = self.face_tracker.get_api_data(tracked_id)
                 if api_data:
                     try:
+                        print(f"\n📺 [DEBUG] Drawing info box for {tracked_id}")
+                        print(f"   API data keys: {list(api_data.keys())}")
+                        print(f"   API data status: {api_data.get('status', 'N/A')}")
                         person_info = PersonInfo.from_dict(api_data)
+                        print(f"   PersonInfo object created: status={person_info.status}")
                         frame = draw_person_info_box(
                             frame,
                             person_info,
                             (top, right, bottom, left),
                             config.INFO_DISPLAY_POSITION
                         )
+                        print(f"   ✅ Info box drawn")
                     except Exception as e:
-                        # Silently handle display errors
-                        pass
+                        # Handle display errors with debugging
+                        print(f"   ❌ Error drawing info box: {e}")
+                        import traceback
+                        traceback.print_exc()
         
         # Draw payment status overlay if enabled
         if config.ENABLE_CRYPTO_PAYMENT and self.payment_status:

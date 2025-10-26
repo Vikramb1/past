@@ -446,10 +446,17 @@ class FaceTracker:
             person_id: Person ID
             person_info_dict: PersonInfo dictionary from API
         """
+        print(f"\n💾 [DEBUG] Storing API response for {person_id}")
+        print(f"   Keys in dict: {list(person_info_dict.keys())}")
+        print(f"   Status: {person_info_dict.get('status', 'N/A')}")
+        
         if person_id in self.registry:
             self.registry[person_id]['person_info'] = person_info_dict
             self.registry[person_id]['api_called'] = True
             self._save_registry()
+            print(f"   ✅ Stored and saved to registry")
+        else:
+            print(f"   ⚠️  Person {person_id} not in registry!")
     
     def has_api_data(self, person_id: str) -> bool:
         """
@@ -462,7 +469,9 @@ class FaceTracker:
             True if API has been called for this person
         """
         person_data = self.registry.get(person_id)
-        return person_data is not None and person_data.get('api_called', False)
+        has_data = person_data is not None and person_data.get('api_called', False)
+        print(f"\n🔍 [DEBUG] has_api_data({person_id}): {has_data}")
+        return has_data
     
     def get_api_data(self, person_id: str) -> Optional[Dict]:
         """
@@ -474,9 +483,16 @@ class FaceTracker:
         Returns:
             PersonInfo dictionary or None
         """
+        print(f"\n📖 [DEBUG] get_api_data({person_id})")
         person_data = self.registry.get(person_id)
         if person_data:
-            return person_data.get('person_info')
+            api_data = person_data.get('person_info')
+            print(f"   Has person_info: {api_data is not None}")
+            if api_data:
+                print(f"   Status: {api_data.get('status', 'N/A')}")
+            return api_data
+        else:
+            print(f"   ⚠️  Person not in registry")
         return None
     
     def get_statistics(self) -> Dict:

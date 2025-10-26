@@ -91,10 +91,11 @@ class FaceDatabase:
                     # Load image
                     image = face_recognition.load_image_file(image_path)
                     
-                    # Get face encodings
+                    # Get face encodings with robust sampling
                     encodings = face_recognition.face_encodings(
                         image,
-                        model='small'  # Use 'small' for faster processing
+                        num_jitters=config.ENCODING_NUM_JITTERS,
+                        model=config.ENCODING_MODEL  # Use large model for better accuracy
                     )
                     
                     if len(encodings) > 0:
@@ -148,7 +149,11 @@ class FaceDatabase:
         try:
             # Load and encode the image
             image = face_recognition.load_image_file(image_path)
-            encodings = face_recognition.face_encodings(image, model='small')
+            encodings = face_recognition.face_encodings(
+                image,
+                num_jitters=config.ENCODING_NUM_JITTERS,
+                model=config.ENCODING_MODEL
+            )
             
             if len(encodings) == 0:
                 print(f"No face found in image: {image_path}")

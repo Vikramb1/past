@@ -1,220 +1,389 @@
 """
 Person information API module.
-Handles fetching person details via API (currently using dummy responses).
+Fetches data from Supabase face_searches table and uses Ollama LLM to generate summaries.
 """
 import time
-import random
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+import threading
+from dataclasses import dataclass
+from typing import Dict, Optional
 import config
-
-
-@dataclass
-class EmploymentEntry:
-    """Employment history entry."""
-    role: str
-    company: str
-    years: str
+import ollama
 
 
 @dataclass
 class PersonInfo:
-    """Person information data class."""
+    """Person information with LLM-generated summary."""
     person_id: str
-    name: str
-    email: str
-    phone: str
-    employment_history: List[EmploymentEntry] = field(default_factory=list)
+    status: str  # "scraping", "completed", "error"
+    summary: str = ""  # LLM-generated bullet points
+    full_name: str = ""  # Store for reference
     
     def to_dict(self) -> Dict:
         """Convert to dictionary."""
         return {
             'person_id': self.person_id,
-            'name': self.name,
-            'email': self.email,
-            'phone': self.phone,
-            'employment_history': [
-                {'role': e.role, 'company': e.company, 'years': e.years}
-                for e in self.employment_history
-            ]
+            'status': self.status,
+            'summary': self.summary,
+            'full_name': self.full_name
         }
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'PersonInfo':
         """Create PersonInfo from dictionary."""
-        employment = [
-            EmploymentEntry(**e) for e in data.get('employment_history', [])
-        ]
         return cls(
-            person_id=data['person_id'],
-            name=data['name'],
-            email=data['email'],
-            phone=data['phone'],
-            employment_history=employment
+            person_id=data.get('person_id', ''),
+            status=data.get('status', 'scraping'),
+            summary=data.get('summary', ''),
+            full_name=data.get('full_name', '')
         )
 
 
 class PersonInfoAPI:
-    """API client for fetching person information."""
+    """API for fetching and processing person information with LLM summaries."""
     
-    # Dummy data for generating responses
-    FIRST_NAMES = [
-        "James", "Mary", "John", "Patricia", "Robert", "Jennifer",
-        "Michael", "Linda", "William", "Elizabeth", "David", "Barbara",
-        "Richard", "Susan", "Joseph", "Jessica", "Thomas", "Sarah"
-    ]
-    
-    LAST_NAMES = [
-        "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia",
-        "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez",
-        "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson"
-    ]
-    
-    JOB_ROLES = [
-        "Senior Engineer", "Software Developer", "Data Scientist",
-        "Product Manager", "Engineering Manager", "Tech Lead",
-        "DevOps Engineer", "Security Analyst", "UX Designer",
-        "Solutions Architect", "Backend Developer", "Frontend Developer"
-    ]
-    
-    COMPANIES = [
-        "Tech Corp", "Innovation Labs", "Digital Solutions",
-        "Cloud Systems", "Data Dynamics", "Smart Analytics",
-        "Future Tech", "Quantum Computing Inc", "AI Ventures",
-        "Startup XYZ", "Global Software", "Enterprise Solutions"
-    ]
-    
-    def __init__(self):
-        """Initialize the API client."""
-        self._cache: Dict[str, PersonInfo] = {}
-        # Seed random for consistent dummy data per person_id
-        self._person_seeds: Dict[str, int] = {}
+    def __init__(self, face_tracker=None):
+        """Initialize the person info API.
+        
+        Args:
+            face_tracker: Optional FaceTracker instance to update with polling results
+        """
+        self._cache = {}  # Cache PersonInfo objects
+        self._llm_cache = {}  # Cache LLM summaries to avoid regenerating
+        self._polling_active = {}  # Track active polling threads
+        self._supabase_storage = None
+        self._face_tracker = face_tracker  # Store reference to update tracker
+        
+        # Initialize Supabase storage
+        if config.ENABLE_SUPABASE_UPLOAD:
+            try:
+                from supabase_storage import SupabaseStorage
+                self._supabase_storage = SupabaseStorage()
+                print("✅ Person Info API initialized with Supabase")
+            except Exception as e:
+                print(f"⚠️  Failed to initialize Supabase for person info: {e}")
+        else:
+            print("⚠️  Supabase disabled - person info will not be available")
     
     def get_person_info(
         self,
         person_id: str,
-        image_path: Optional[str] = None
+        image_filename: Optional[str] = None
     ) -> Optional[PersonInfo]:
         """
-        Get person information (currently returns dummy data).
+        Get person information from Supabase face_searches table.
         
         Args:
             person_id: Unique person identifier
-            image_path: Path to person's image (for future real API)
+            image_filename: Image filename to match in database (e.g., "person_001_1729901234.png")
         
         Returns:
             PersonInfo object or None if failed
         """
         # Check cache first
         if person_id in self._cache:
-            return self._cache[person_id]
+            cached = self._cache[person_id]
+            # If still scraping and not already polling, start polling
+            if cached.status == "scraping" and person_id not in self._polling_active:
+                self._start_polling(person_id, image_filename)
+            return cached
         
-        # Simulate API delay
-        if config.API_CALL_DELAY > 0:
-            time.sleep(config.API_CALL_DELAY)
+        if not image_filename:
+            print(f"⚠️  No image filename provided for {person_id}")
+            return None
         
-        # Generate dummy response
-        info = self._generate_dummy_info(person_id)
+        # Query Supabase
+        info = self._fetch_from_supabase(person_id, image_filename)
         
         # Cache the response
         self._cache[person_id] = info
         
+        # If scraping, start polling thread
+        if info.status == "scraping":
+            self._start_polling(person_id, image_filename)
+        
         return info
     
-    def _generate_dummy_info(self, person_id: str) -> PersonInfo:
+    def _fetch_from_supabase(self, person_id: str, image_filename: str) -> PersonInfo:
         """
-        Generate dummy person information.
-        
-        Args:
-            person_id: Person identifier for consistent generation
-        
-        Returns:
-            PersonInfo with dummy data
-        """
-        # Get or create seed for this person
-        if person_id not in self._person_seeds:
-            # Use hash of person_id for consistent randomization
-            self._person_seeds[person_id] = hash(person_id) % 10000
-        
-        seed = self._person_seeds[person_id]
-        rng = random.Random(seed)
-        
-        # Generate name
-        first_name = rng.choice(self.FIRST_NAMES)
-        last_name = rng.choice(self.LAST_NAMES)
-        name = f"{first_name} {last_name}"
-        
-        # Generate email
-        email = f"{first_name.lower()}.{last_name.lower()}@company.com"
-        
-        # Generate phone
-        area_code = rng.randint(200, 999)
-        prefix = rng.randint(200, 999)
-        line = rng.randint(1000, 9999)
-        phone = f"+1 ({area_code}) {prefix}-{line}"
-        
-        # Generate employment history (1-3 entries)
-        num_jobs = rng.randint(1, 3)
-        employment = []
-        
-        current_year = 2025
-        years_back = 0
-        
-        for i in range(num_jobs):
-            role = rng.choice(self.JOB_ROLES)
-            company = rng.choice(self.COMPANIES)
-            
-            if i == 0:
-                # Current job
-                start_year = current_year - rng.randint(1, 5)
-                years = f"{start_year}-Present"
-            else:
-                # Previous jobs
-                duration = rng.randint(1, 4)
-                end_year = current_year - years_back - 1
-                start_year = end_year - duration
-                years = f"{start_year}-{end_year}"
-                years_back += duration + 1
-            
-            employment.append(EmploymentEntry(
-                role=role,
-                company=company,
-                years=years
-            ))
-        
-        return PersonInfo(
-            person_id=person_id,
-            name=name,
-            email=email,
-            phone=phone,
-            employment_history=employment
-        )
-    
-    def clear_cache(self) -> None:
-        """Clear the cached responses."""
-        self._cache.clear()
-    
-    def get_cached_info(self, person_id: str) -> Optional[PersonInfo]:
-        """
-        Get cached person info without making API call.
+        Fetch and process person info from Supabase.
         
         Args:
             person_id: Person identifier
+            image_filename: Image filename to match
         
         Returns:
-            Cached PersonInfo or None
+            PersonInfo object
         """
-        return self._cache.get(person_id)
+        print(f"\n🔍 [DEBUG] Fetching from Supabase for {person_id}")
+        print(f"   Image filename: {image_filename}")
+        
+        if not self._supabase_storage:
+            print(f"   ❌ No Supabase storage available")
+            return PersonInfo(person_id=person_id, status="error", summary="DB Error")
+        
+        try:
+            # Query database
+            result = self._supabase_storage.query_face_search(image_filename)
+            
+            print(f"   Query result: {result is not None}")
+            if result:
+                print(f"   Full name: {result.get('full_name', 'N/A')}")
+                print(f"   Has social_media: {bool(result.get('social_media'))}")
+                print(f"   Has nyne_ai_response: {bool(result.get('nyne_ai_response'))}")
+            
+            if not result:
+                # No data found yet
+                print(f"   ℹ️  No data in DB yet - still scraping")
+                return PersonInfo(
+                    person_id=person_id,
+                    status="scraping",
+                    summary="🔍 Scraping..."
+                )
+            
+            # Parse with LLM
+            return self._parse_database_row(person_id, result)
+            
+        except Exception as e:
+            print(f"⚠️  Error fetching person info for {person_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return PersonInfo(person_id=person_id, status="error", summary="Error")
+    
+    def _parse_database_row(self, person_id: str, db_row: Dict) -> PersonInfo:
+        """
+        Parse database row and generate LLM summary.
+        Check cache first to avoid regenerating.
+        
+        Args:
+            person_id: Person identifier
+            db_row: Database row with all fields
+        
+        Returns:
+            PersonInfo object
+        """
+        print(f"\n📊 [DEBUG] Parsing database row for {person_id}")
+        
+        try:
+            full_name = db_row.get('full_name', 'Unknown')
+            has_full_name = bool(db_row.get('full_name'))
+            has_social = bool(db_row.get('social_media'))
+            has_nyne = bool(db_row.get('nyne_ai_response'))
+            
+            print(f"   Full name: {full_name} (exists: {has_full_name})")
+            print(f"   Has social_media: {has_social}")
+            print(f"   Has nyne_ai_response: {has_nyne}")
+            
+            # Check if we have data to process
+            if not any([has_full_name, has_social, has_nyne]):
+                # No useful data yet - still scraping
+                print(f"   ℹ️  No useful data yet - marking as scraping")
+                return PersonInfo(
+                    person_id=person_id,
+                    status="scraping",
+                    summary="🔍 Scraping data...",
+                    full_name="Scraping..."
+                )
+            
+            # Check if we already have LLM summary cached for this person
+            cache_key = f"llm_summary_{person_id}"
+            if cache_key in self._llm_cache:
+                print(f"   ✅ Using cached LLM summary for {person_id}")
+                return PersonInfo(
+                    person_id=person_id,
+                    status="completed",
+                    summary=self._llm_cache[cache_key],
+                    full_name=full_name
+                )
+            
+            # Generate new LLM summary
+            print(f"   🧠 Need to generate LLM summary for {person_id}")
+            summary = self._generate_llm_summary(person_id, db_row)
+            
+            # Cache the LLM summary
+            self._llm_cache[cache_key] = summary
+            print(f"   ✅ LLM summary generated and cached")
+            
+            return PersonInfo(
+                person_id=person_id,
+                status="completed",
+                summary=summary,
+                full_name=full_name
+            )
+            
+        except Exception as e:
+            print(f"⚠️  Error processing data for {person_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return PersonInfo(
+                person_id=person_id,
+                status="error",
+                summary="❌ Error processing data"
+            )
+    
+    def _generate_llm_summary(self, person_id: str, db_row: Dict) -> str:
+        """
+        Use Ollama LLM to generate a concise bullet-pointed summary.
+        
+        Args:
+            person_id: Person identifier
+            db_row: Database row with all fields
+        
+        Returns:
+            Formatted bullet-pointed summary string
+        """
+        print(f"\n🤖 [DEBUG] Generating LLM summary for {person_id}")
+        
+        # Extract available fields
+        full_name = db_row.get('full_name', 'Unknown')
+        social_media = db_row.get('social_media', {})
+        google_images = db_row.get('google_image_results', '')
+        nyne_response = db_row.get('nyne_ai_response', {})
+        
+        print(f"   Input data:")
+        print(f"   - Full name: {full_name}")
+        print(f"   - Social media keys: {list(social_media.keys()) if isinstance(social_media, dict) else 'N/A'}")
+        print(f"   - Google images length: {len(str(google_images))}")
+        print(f"   - Nyne response keys: {list(nyne_response.keys()) if isinstance(nyne_response, dict) else 'N/A'}")
+        
+        # Build context for LLM
+        context = f"""
+Name: {full_name}
+Social Media: {social_media}
+Google Images: {google_images}
+Nyne AI Data: {nyne_response}
+
+Create a SHORT bullet-pointed summary (max 5-6 bullets) with key information about this person.
+Focus on: name, location, profession/role, notable facts, social profiles.
+Format as simple bullet points with emojis where appropriate.
+Keep each bullet under 50 characters.
+"""
+        
+        print(f"\n📝 [DEBUG] LLM Prompt:")
+        print(f"   Model: {config.OLLAMA_MODEL}")
+        print(f"   Context length: {len(context)} chars")
+        print(f"   Context preview: {context[:200]}...")
+        
+        try:
+            print(f"   ⏳ Calling Ollama...")
+            # Call Ollama
+            response = ollama.chat(
+                model=config.OLLAMA_MODEL,
+                messages=[{'role': 'user', 'content': context}]
+            )
+            
+            summary = response['message']['content']
+            print(f"   ✅ LLM response received")
+            print(f"   Response length: {len(summary)} chars")
+            print(f"   Response preview: {summary[:100]}...")
+            print(f"✅ LLM summary generated for {person_id}")
+            return summary
+            
+        except Exception as e:
+            print(f"⚠️  LLM generation error for {person_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return f"• {full_name}\n• Error generating summary"
+    
+    def _start_polling(self, person_id: str, image_filename: str):
+        """
+        Start background polling thread for a person.
+        
+        Args:
+            person_id: Person to poll for
+            image_filename: Image filename to match
+        """
+        if person_id in self._polling_active and self._polling_active[person_id]:
+            return  # Already polling
+        
+        self._polling_active[person_id] = True
+        
+        def poll_worker():
+            """Background worker that polls for updates."""
+            start_time = time.time()
+            poll_interval = config.PERSON_INFO_POLL_INTERVAL
+            max_poll_time = config.PERSON_INFO_MAX_POLL_TIME
+            poll_count = 0
+            
+            print(f"🔄 [DEBUG] Starting polling for {person_id}...")
+            print(f"   Interval: {poll_interval}s, Max time: {max_poll_time}s")
+            
+            while self._polling_active.get(person_id, False):
+                # Check timeout
+                if time.time() - start_time > max_poll_time:
+                    print(f"⏱️  Polling timeout for {person_id} after {poll_count} attempts")
+                    self._polling_active[person_id] = False
+                    break
+                
+                # Wait before next poll
+                time.sleep(poll_interval)
+                poll_count += 1
+                
+                try:
+                    print(f"\n🔄 [DEBUG] Poll attempt #{poll_count} for {person_id}")
+                    # Fetch updated info
+                    updated_info = self._fetch_from_supabase(person_id, image_filename)
+                    
+                    print(f"   Poll result: status={updated_info.status}")
+                    
+                    # Update cache
+                    self._cache[person_id] = updated_info
+                    print(f"   ✅ Cache updated for {person_id}")
+                    
+                    # IMPORTANT: Also update face_tracker if available
+                    if self._face_tracker:
+                        self._face_tracker.store_api_response(person_id, updated_info.to_dict())
+                        print(f"   ✅ Face tracker updated for {person_id}")
+                    
+                    # If completed or error, stop polling
+                    if updated_info.status in ["completed", "error"]:
+                        print(f"✅ Person info ready for {person_id}: {updated_info.full_name}")
+                        print(f"   Total polls: {poll_count}, Time elapsed: {time.time() - start_time:.1f}s")
+                        self._polling_active[person_id] = False
+                        break
+                    else:
+                        print(f"   ℹ️  Still scraping, will poll again in {poll_interval}s")
+                        
+                except Exception as e:
+                    print(f"⚠️  Polling error for {person_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        # Start thread
+        thread = threading.Thread(target=poll_worker, daemon=True)
+        thread.start()
+    
+    def stop_polling(self, person_id: str = None):
+        """
+        Stop polling for a specific person or all persons.
+        
+        Args:
+            person_id: Person to stop polling for, or None for all
+        """
+        if person_id:
+            self._polling_active[person_id] = False
+        else:
+            for pid in list(self._polling_active.keys()):
+                self._polling_active[pid] = False
+    
+    def clear_cache(self):
+        """Clear all cached data."""
+        self._cache.clear()
+        self._llm_cache.clear()
+        self.stop_polling()
+        print("🗑️  Person info cache cleared")
 
 
-# Global API instance
+# Singleton instance
 _api_instance = None
 
 
-def get_api_instance() -> PersonInfoAPI:
-    """Get global PersonInfoAPI instance."""
+def get_api_instance(face_tracker=None) -> PersonInfoAPI:
+    """Get or create the singleton API instance.
+    
+    Args:
+        face_tracker: Optional FaceTracker instance (only used on first call)
+    """
     global _api_instance
     if _api_instance is None:
-        _api_instance = PersonInfoAPI()
+        _api_instance = PersonInfoAPI(face_tracker=face_tracker)
     return _api_instance
-
