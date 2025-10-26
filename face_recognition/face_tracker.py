@@ -46,6 +46,10 @@ class FaceTracker:
         # Counter for new person IDs
         self.next_person_id = 1
         
+        # Detection stability tracking - tracks faces across frames before saving
+        self.detection_candidates = {}  # {temp_id: {'encoding': ..., 'count': N, 'last_seen': time}}
+        self.detection_stability_threshold = config.DETECTION_STABILITY_FRAMES
+        
         # Initialize quality checker and frame collector if enabled
         self.quality_detector = None
         self.frame_collector = None
@@ -188,6 +192,60 @@ class FaceTracker:
         print(f"   🆕 New unique face detected")
         return False, None
     
+    def _check_detection_candidate(self, encoding: np.ndarray) -> Optional[str]:
+        """
+        Check if this face matches an existing detection candidate.
+        Clean up stale candidates (not seen for 2 seconds).
+        
+        Args:
+            encoding: Face encoding to check
+        
+        Returns:
+            Candidate ID if match found, None otherwise
+        """
+        current_time = time.time()
+        stale_threshold = 2.0  # seconds
+        
+        # Clean up stale candidates
+        stale_ids = [
+            cid for cid, data in self.detection_candidates.items()
+            if current_time - data['last_seen'] > stale_threshold
+        ]
+        for cid in stale_ids:
+            del self.detection_candidates[cid]
+            if stale_ids:  # Only print if we actually cleaned something
+                print(f"🧹 Cleaned up stale candidate: {cid}")
+        
+        # Check existing candidates
+        for candidate_id, candidate_data in self.detection_candidates.items():
+            distance = face_recognition.face_distance(
+                [candidate_data['encoding']], 
+                encoding
+            )[0]
+            
+            if distance <= self.duplicate_threshold:
+                return candidate_id
+        
+        return None
+    
+    def _add_detection_candidate(self, encoding: np.ndarray) -> str:
+        """
+        Add a new detection candidate.
+        
+        Args:
+            encoding: Face encoding
+        
+        Returns:
+            Candidate ID
+        """
+        candidate_id = f"candidate_{int(time.time() * 1000)}"
+        self.detection_candidates[candidate_id] = {
+            'encoding': encoding,
+            'count': 1,
+            'last_seen': time.time()
+        }
+        return candidate_id
+    
     def track_face(
         self,
         face_image: np.ndarray,
@@ -195,7 +253,7 @@ class FaceTracker:
         face_location: Tuple[int, int, int, int]
     ) -> Tuple[Optional[str], bool]:
         """
-        Track a detected face. Save if new, return ID if duplicate.
+        Track a detected face. Only save if stable across multiple frames.
         
         Args:
             face_image: Full frame image (BGR format)
@@ -204,13 +262,13 @@ class FaceTracker:
         
         Returns:
             Tuple of (person_id, is_new_face)
-            person_id is None if still collecting frames
+            person_id is None if still collecting stability/quality frames
         """
-        # Check if this face is already tracked
+        # First check if already tracked (existing person)
         is_duplicate, existing_id = self._is_duplicate(face_encoding)
         
         if is_duplicate:
-            # Update detection count
+            # Update existing person
             self.registry[existing_id]['detection_count'] += 1
             self.registry[existing_id]['last_seen'] = datetime.now().isoformat()
             
@@ -220,11 +278,47 @@ class FaceTracker:
             
             return existing_id, False
         
-        # New face detected - handle quality check if enabled
+        # Check detection candidates (potentially new person)
+        candidate_id = self._check_detection_candidate(face_encoding)
+        
+        if candidate_id is None:
+            # New detection candidate - start tracking
+            candidate_id = self._add_detection_candidate(face_encoding)
+            print(f"🔍 New face candidate detected (1/{self.detection_stability_threshold} frames)")
+            return None, False  # Don't save yet
+        
+        # Update candidate detection count
+        current_count = self.detection_candidates[candidate_id]['count']
+        self.detection_candidates[candidate_id]['count'] += 1
+        self.detection_candidates[candidate_id]['last_seen'] = time.time()
+        
+        new_count = self.detection_candidates[candidate_id]['count']
+        print(f"🔍 Face candidate stable ({new_count}/{self.detection_stability_threshold} frames)")
+        
+        # Check if reached stability threshold
+        if new_count < self.detection_stability_threshold:
+            return None, False  # Still collecting stability frames
+        
+        # Stability threshold reached - proceed with normal save logic
+        print(f"✅ Face stable for {self.detection_stability_threshold} frames - proceeding to save")
+        
+        # Remove from candidates
+        del self.detection_candidates[candidate_id]
+        
+        # Continue with existing quality check or immediate save logic
         if self.frame_collector and config.ENABLE_QUALITY_CHECK:
             return self._handle_quality_collection(face_image, face_encoding, face_location)
         
         # No quality check - save immediately
+        return self._save_face_immediately(face_image, face_encoding, face_location)
+    
+    def _save_face_immediately(
+        self, 
+        face_image: np.ndarray,
+        face_encoding: np.ndarray,
+        face_location: Tuple[int, int, int, int]
+    ) -> Tuple[str, bool]:
+        """Save face without quality check."""
         person_id = self._generate_person_id()
         
         # Generate timestamp for filename

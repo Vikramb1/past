@@ -200,6 +200,10 @@ class SupabaseStorage:
                 print(f"      - ID: {result.get('id', 'N/A')}")
                 print(f"      - Full name: {result.get('full_name', 'N/A')}")
                 print(f"      - Trigger image URL: {result.get('trigger_image_url', 'N/A')}")
+                print(f"      - text_to_display: {bool(result.get('text_to_display'))}")
+                if result.get('text_to_display'):
+                    preview = result.get('text_to_display', '')[:100]
+                    print(f"      - text_to_display preview: {preview}...")
                 print(f"      - Social media: {bool(result.get('social_media'))}")
                 print(f"      - Nyne AI response: {bool(result.get('nyne_ai_response'))}")
                 print(f"      - Google image results: {bool(result.get('google_image_results'))}")

@@ -1,6 +1,6 @@
 """
 Person information API module.
-Fetches data from Supabase face_searches table and uses Ollama LLM to generate summaries.
+Fetches data from Supabase face_searches table and displays text_to_display field.
 """
 import time
 import threading
@@ -12,10 +12,10 @@ import ollama
 
 @dataclass
 class PersonInfo:
-    """Person information with LLM-generated summary."""
+    """Person information from Supabase."""
     person_id: str
     status: str  # "scraping", "completed", "error"
-    summary: str = ""  # LLM-generated bullet points
+    summary: str = ""  # Display text from text_to_display column
     full_name: str = ""  # Store for reference
     
     def to_dict(self) -> Dict:
@@ -39,7 +39,7 @@ class PersonInfo:
 
 
 class PersonInfoAPI:
-    """API for fetching and processing person information with LLM summaries."""
+    """API for fetching and displaying person information from Supabase."""
     
     def __init__(self, face_tracker=None):
         """Initialize the person info API.
@@ -128,6 +128,7 @@ class PersonInfoAPI:
             print(f"   Query result: {result is not None}")
             if result:
                 print(f"   Full name: {result.get('full_name', 'N/A')}")
+                print(f"   Has text_to_display: {bool(result.get('text_to_display'))}")
                 print(f"   Has social_media: {bool(result.get('social_media'))}")
                 print(f"   Has nyne_ai_response: {bool(result.get('nyne_ai_response'))}")
             
@@ -151,8 +152,7 @@ class PersonInfoAPI:
     
     def _parse_database_row(self, person_id: str, db_row: Dict) -> PersonInfo:
         """
-        Parse database row and generate LLM summary.
-        Check cache first to avoid regenerating.
+        Parse database row and use text_to_display field directly.
         
         Args:
             person_id: Person identifier
@@ -165,48 +165,32 @@ class PersonInfoAPI:
         
         try:
             full_name = db_row.get('full_name', 'Unknown')
+            text_to_display = db_row.get('text_to_display', '')
             has_full_name = bool(db_row.get('full_name'))
-            has_social = bool(db_row.get('social_media'))
-            has_nyne = bool(db_row.get('nyne_ai_response'))
+            has_text_to_display = bool(text_to_display and text_to_display.strip())
             
             print(f"   Full name: {full_name} (exists: {has_full_name})")
-            print(f"   Has social_media: {has_social}")
-            print(f"   Has nyne_ai_response: {has_nyne}")
+            print(f"   Has text_to_display: {has_text_to_display}")
+            if has_text_to_display:
+                print(f"   text_to_display preview: {text_to_display[:100]}...")
             
-            # Check if we have data to process
-            if not any([has_full_name, has_social, has_nyne]):
-                # No useful data yet - still scraping
-                print(f"   ℹ️  No useful data yet - marking as scraping")
+            # Check if we have text_to_display
+            if not has_text_to_display:
+                # No display text yet - still scraping
+                print(f"   ℹ️  No text_to_display yet - marking as scraping")
                 return PersonInfo(
                     person_id=person_id,
                     status="scraping",
                     summary="🔍 Scraping data...",
-                    full_name="Scraping..."
+                    full_name=full_name if has_full_name else "Scraping..."
                 )
             
-            # Check if we already have LLM summary cached for this person
-            cache_key = f"llm_summary_{person_id}"
-            if cache_key in self._llm_cache:
-                print(f"   ✅ Using cached LLM summary for {person_id}")
-                return PersonInfo(
-                    person_id=person_id,
-                    status="completed",
-                    summary=self._llm_cache[cache_key],
-                    full_name=full_name
-                )
-            
-            # Generate new LLM summary
-            print(f"   🧠 Need to generate LLM summary for {person_id}")
-            summary = self._generate_llm_summary(person_id, db_row)
-            
-            # Cache the LLM summary
-            self._llm_cache[cache_key] = summary
-            print(f"   ✅ LLM summary generated and cached")
-            
+            # Use text_to_display directly
+            print(f"   ✅ Using text_to_display from database for {person_id}")
             return PersonInfo(
                 person_id=person_id,
                 status="completed",
-                summary=summary,
+                summary=text_to_display,
                 full_name=full_name
             )
             
