@@ -427,44 +427,41 @@ class FaceRecognitionApp:
                 config.SHOW_CONFIDENCE
             )
             
-            # Draw saved face thumbnail if enabled and person is tracked
-            if config.SHOW_FACE_THUMBNAIL and self.face_tracker and tracked_id:
-                # Get the saved image path for this person
-                registry_entry = self.face_tracker.get_person_info(tracked_id)
-                if registry_entry:
-                    # Build full path to saved image
-                    image_path = registry_entry.get('image_path')
-                    if image_path:
-                        full_image_path = os.path.join(config.BASE_DIR, image_path)
-                        frame = utils.draw_saved_face_thumbnail(
-                            frame,
-                            (top, right, bottom, left),
-                            saved_image_path=full_image_path,
-                            thumbnail_size=config.FACE_THUMBNAIL_SIZE,
-                            position="top_left",
-                            padding=config.FACE_THUMBNAIL_PADDING
-                        )
-            
-            # Draw person info box if API is enabled and data is available
+            # Draw person info box (LEFT side) and images (RIGHT side) if API is enabled
             if config.ENABLE_PERSON_INFO_API and self.face_tracker and tracked_id:
                 api_data = self.face_tracker.get_api_data(tracked_id)
                 if api_data:
                     try:
-                        print(f"\n📺 [DEBUG] Drawing info box for {tracked_id}")
+                        print(f"\n📺 [DEBUG] Drawing display elements for {tracked_id}")
                         print(f"   API data keys: {list(api_data.keys())}")
                         print(f"   API data status: {api_data.get('status', 'N/A')}")
                         person_info = PersonInfo.from_dict(api_data)
                         print(f"   PersonInfo object created: status={person_info.status}")
+                        
+                        # Draw info box on LEFT side of face
                         frame = draw_person_info_box(
                             frame,
                             person_info,
                             (top, right, bottom, left),
-                            config.INFO_DISPLAY_POSITION
+                            position="left"  # Force left position for description
                         )
-                        print(f"   ✅ Info box drawn")
+                        print(f"   ✅ Info box drawn on LEFT")
+                        
+                        # Draw images on RIGHT side of face (if available and enabled)
+                        if config.SHOW_FACE_THUMBNAIL and person_info.image_urls and len(person_info.image_urls) > 0:
+                            frame = utils.draw_result_images_from_urls(
+                                frame,
+                                (top, right, bottom, left),
+                                image_urls=person_info.image_urls,
+                                thumbnail_size=config.FACE_THUMBNAIL_SIZE,
+                                position="top_right",  # Force right position for images
+                                padding=config.FACE_THUMBNAIL_PADDING,
+                                spacing=5
+                            )
+                            print(f"   ✅ Images drawn on RIGHT")
                     except Exception as e:
                         # Handle display errors with debugging
-                        print(f"   ❌ Error drawing info box: {e}")
+                        print(f"   ❌ Error drawing display elements: {e}")
                         import traceback
                         traceback.print_exc()
         

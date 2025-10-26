@@ -267,8 +267,8 @@ class GestureDetector:
         index_middle_distance_px = np.linalg.norm(index_tip_px - middle_tip_px)
         index_middle_distance_norm = index_middle_distance_px / hand_size
         
-        # Peace sign: fingers slightly separated but not too far apart
-        fingers_properly_spaced = (0.15 < index_middle_distance_norm < 0.5)
+        # Peace sign: fingers slightly separated but not too far apart (more lenient range)
+        fingers_properly_spaced = (0.1 < index_middle_distance_norm < 0.6)
 
         # 5. Check finger angles (should point roughly upward)
         index_vector = index_tip_px - index_mcp_px
@@ -278,12 +278,12 @@ class GestureDetector:
         index_angle = np.degrees(np.arctan2(index_vector[0], -index_vector[1]))
         middle_angle = np.degrees(np.arctan2(middle_vector[0], -middle_vector[1]))
         
-        # Fingers should point generally upward (within 45 degrees of vertical)
-        index_upright = abs(index_angle) < 50
-        middle_upright = abs(middle_angle) < 50
+        # Fingers should point generally upward (within 60 degrees of vertical - more lenient)
+        index_upright = abs(index_angle) < 60
+        middle_upright = abs(middle_angle) < 60
         
-        # Fingers should be roughly parallel (similar angles)
-        fingers_parallel = abs(index_angle - middle_angle) < 30
+        # Fingers should be roughly parallel (similar angles - more lenient)
+        fingers_parallel = abs(index_angle - middle_angle) < 40
 
         # 6. Check that extended fingers are significantly longer than folded ones
         index_length = np.linalg.norm(index_tip_px - index_mcp_px)
@@ -313,8 +313,8 @@ class GestureDetector:
         criteria_met = sum(criteria.values())
         total_criteria = len(criteria)
         
-        # Require at least 8 out of 10 criteria to be met
-        is_peace_candidate = criteria_met >= 8
+        # Require at least 7 out of 10 criteria to be met (more lenient)
+        is_peace_candidate = criteria_met >= 7
 
         # Initialize stability tracking
         if hand_id not in self.peace_stability:
@@ -340,9 +340,9 @@ class GestureDetector:
                 'criteria': criteria
             })
         
-        # Require stable detection over at least 3 consecutive frames (roughly 0.1-0.15 seconds)
+        # Require stable detection over at least 2 consecutive frames (more responsive)
         stable_frames = len(stability['frames'])
-        is_peace = is_peace_candidate and stable_frames >= 3
+        is_peace = is_peace_candidate and stable_frames >= 2
 
         # Calculate confidence
         confidence = 0.0

@@ -5,7 +5,7 @@ Fetches data from Supabase face_searches table and displays text_to_display fiel
 import time
 import threading
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import config
 import ollama
 
@@ -18,6 +18,12 @@ class PersonInfo:
     summary: str = ""  # Display text from text_to_display column
     full_name: str = ""  # Store for reference
     email: str = ""  # Person's email address from database
+    image_urls: List[str] = None  # List of result image URLs from Supabase
+    
+    def __post_init__(self):
+        """Initialize mutable defaults."""
+        if self.image_urls is None:
+            self.image_urls = []
 
     def to_dict(self) -> Dict:
         """Convert to dictionary."""
@@ -26,7 +32,8 @@ class PersonInfo:
             'status': self.status,
             'summary': self.summary,
             'full_name': self.full_name,
-            'email': self.email
+            'email': self.email,
+            'image_urls': self.image_urls
         }
     
     @classmethod
@@ -37,7 +44,8 @@ class PersonInfo:
             status=data.get('status', 'scraping'),
             summary=data.get('summary', ''),
             full_name=data.get('full_name', ''),
-            email=data.get('email', '')
+            email=data.get('email', ''),
+            image_urls=data.get('image_urls', [])
         )
 
 
@@ -170,36 +178,44 @@ class PersonInfoAPI:
             full_name = db_row.get('full_name', 'Unknown')
             text_to_display = db_row.get('text_to_display', '')
             email = db_row.get('email', '')
+            result_image_urls = db_row.get('result_image_urls', [])
+            
             has_full_name = bool(db_row.get('full_name'))
             has_text_to_display = bool(text_to_display and text_to_display.strip())
             has_email = bool(email and email.strip())
+            has_images = bool(result_image_urls and len(result_image_urls) > 0)
 
             print(f"   Full name: {full_name} (exists: {has_full_name})")
             print(f"   Email: {email if has_email else 'N/A'} (exists: {has_email})")
             print(f"   Has text_to_display: {has_text_to_display}")
+            print(f"   Has result_image_urls: {has_images} ({len(result_image_urls) if result_image_urls else 0} images)")
             if has_text_to_display:
                 print(f"   text_to_display preview: {text_to_display[:100]}...")
+            if has_images:
+                print(f"   Image URLs: {result_image_urls}")
 
-            # Check if we have text_to_display
-            if not has_text_to_display:
-                # No display text yet - still scraping
-                print(f"   ℹ️  No text_to_display yet - marking as scraping")
+            # Check if we have text_to_display and images
+            if not has_text_to_display or not has_images:
+                # No display text or images yet - still scraping
+                print(f"   ℹ️  Missing data (text: {has_text_to_display}, images: {has_images}) - marking as scraping")
                 return PersonInfo(
                     person_id=person_id,
                     status="scraping",
                     summary="Scraping data...",
                     full_name=full_name if has_full_name else "Scraping...",
-                    email=email if has_email else ""
+                    email=email if has_email else "",
+                    image_urls=[]
                 )
 
-            # Use text_to_display directly
-            print(f"   ✅ Using text_to_display from database for {person_id}")
+            # Use text_to_display and image URLs directly
+            print(f"   ✅ Using text_to_display and {len(result_image_urls)} images from database for {person_id}")
             return PersonInfo(
                 person_id=person_id,
                 status="completed",
                 summary=text_to_display,
                 full_name=full_name,
-                email=email
+                email=email,
+                image_urls=result_image_urls if isinstance(result_image_urls, list) else []
             )
             
         except Exception as e:

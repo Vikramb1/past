@@ -82,22 +82,77 @@ def _format_person_info(person_info: PersonInfo) -> list:
         lines.append(("Unable to retrieve data", 0.35, False, (180, 180, 180)))
         return lines
 
-    # Display name (modern header style)
+    # Helper function to wrap any text to fit box width
+    def wrap_text_to_width(text, font_scale, is_bold=False):
+        """Wrap text to fit within INFO_BOX_MAX_WIDTH."""
+        max_width = config.INFO_BOX_MAX_WIDTH - config.INFO_BOX_PADDING_LEFT - config.INFO_BOX_PADDING_RIGHT - 16
+        thickness = 2 if is_bold else 1
+        
+        words = text.split()
+        wrapped_lines = []
+        current_line = ""
+        
+        for word in words:
+            # Check if single word is too long
+            (word_width, _), _ = cv2.getTextSize(word, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+            
+            if word_width > max_width:
+                # Word too long, break by character
+                if current_line:
+                    wrapped_lines.append(current_line)
+                    current_line = ""
+                
+                char_line = ""
+                for char in word:
+                    test_char = char_line + char
+                    (char_width, _), _ = cv2.getTextSize(test_char, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                    if char_width <= max_width:
+                        char_line = test_char
+                    else:
+                        if char_line:
+                            wrapped_lines.append(char_line)
+                        char_line = char
+                current_line = char_line
+                continue
+            
+            # Try adding word to current line
+            test_line = f"{current_line} {word}".strip() if current_line else word
+            (text_width, _), _ = cv2.getTextSize(test_line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+            
+            if text_width <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    wrapped_lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            wrapped_lines.append(current_line)
+        
+        return wrapped_lines if wrapped_lines else [text]
+    
+    # Display name (modern header style) with wrapping
     name = person_info.full_name or "Unknown Person"
     print(f"   → Displaying completed status with name: {name}")
-    lines.append((name.upper(), 0.55, True, (255, 255, 255)))  # White, uppercase
+    name_lines = wrap_text_to_width(name.upper(), 0.55, is_bold=True)
+    for name_line in name_lines:
+        lines.append((name_line, 0.55, True, (255, 255, 255)))
 
-    # Display email with text prefix instead of emoji
+    # Display email with wrapping
     if person_info.email and person_info.email.strip():
         lines.append(("", 0.15, False, config.INFO_TEXT_COLOR))  # Small spacer
-        lines.append((f"EMAIL: {person_info.email}", 0.38, False, (100, 200, 255)))  # Light blue for email
+        email_text = f"EMAIL: {person_info.email}"
+        email_lines = wrap_text_to_width(email_text, 0.38, is_bold=False)
+        for email_line in email_lines:
+            lines.append((email_line, 0.38, False, (100, 200, 255)))
 
     lines.append(("", 0.2, False, config.INFO_TEXT_COLOR))  # Spacer
     lines.append(("-" * 30, 0.3, False, (80, 80, 80)))  # Separator line using regular dash
     lines.append(("", 0.15, False, config.INFO_TEXT_COLOR))  # Small spacer
     
-    # Display LLM summary with word wrapping for narrow box
-    summary_lines = person_info.summary.split('\n')
+    # Display summary with word wrapping for narrow box
+    # Handle case where summary might be one long line
+    summary_lines = person_info.summary.split('\n') if '\n' in person_info.summary else [person_info.summary]
     print(f"   → Summary has {len(summary_lines)} lines")
     
     for i, line in enumerate(summary_lines):
@@ -147,25 +202,20 @@ def _format_person_info(person_info: PersonInfo) -> list:
         # Use cyan color for URLs, light gray for regular text
         text_color = (100, 200, 255) if is_url else (220, 220, 220)
 
-        # Word wrap long lines to fit narrow box (max ~40 chars per line)
-        if len(cleaned_line) > 45 and not is_url:
-            words = cleaned_line.split()
-            current_line = ""
-            for word in words:
-                test_line = f"{current_line} {word}".strip()
-                if len(test_line) <= 45:
-                    current_line = test_line
-                else:
-                    if current_line:
-                        lines.append((current_line, font_scale, False, text_color))
-                    current_line = word
-            if current_line:
-                lines.append((current_line, font_scale, False, text_color))
+        # Word wrap using helper function
+        if not is_url:
+            # Use the helper function for consistent wrapping
+            wrapped_lines = wrap_text_to_width(cleaned_line, font_scale, is_bold=False)
+            for wrapped_line in wrapped_lines:
+                lines.append((wrapped_line, font_scale, False, text_color))
         else:
             print(f"      Line {i}: {cleaned_line[:50]}")
             # Add link prefix for URLs (no emoji to avoid rendering issues)
             display_text = f"LINK: {cleaned_line}" if is_url else cleaned_line
-            lines.append((display_text, font_scale, False, text_color))
+            # Wrap URLs too in case they're very long
+            wrapped_urls = wrap_text_to_width(display_text, font_scale, is_bold=False)
+            for wrapped_url in wrapped_urls:
+                lines.append((wrapped_url, font_scale, False, text_color))
     
     print(f"   → Total display lines: {len(lines)}")
     return lines
@@ -174,6 +224,7 @@ def _format_person_info(person_info: PersonInfo) -> list:
 def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
     """
     Calculate dimensions needed for info box.
+    Width is FIXED at INFO_BOX_MAX_WIDTH to ensure proper text wrapping.
 
     Args:
         lines: List of (text, font_scale, is_bold, color) tuples
@@ -181,7 +232,9 @@ def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
     Returns:
         Tuple of (width, height, line_heights)
     """
-    max_width = 0
+    # FIXED WIDTH - do not calculate from text
+    box_width = config.INFO_BOX_MAX_WIDTH
+    
     total_height = config.INFO_BOX_PADDING_TOP + 8  # Extra padding for modern look
     line_heights = []
 
@@ -208,17 +261,11 @@ def _calculate_box_dimensions(lines: list) -> Tuple[int, int, list]:
             thickness
         )
 
-        max_width = max(max_width, text_width)
         line_height = text_height + baseline + config.INFO_LINE_SPACING + 2
         line_heights.append(line_height)
         total_height += line_height
     
     total_height += config.INFO_BOX_PADDING_BOTTOM
-    box_width = max_width + config.INFO_BOX_PADDING_LEFT + config.INFO_BOX_PADDING_RIGHT
-    
-    # Apply maximum width constraint
-    if box_width > config.INFO_BOX_MAX_WIDTH:
-        box_width = config.INFO_BOX_MAX_WIDTH
     
     return box_width, total_height, line_heights
 
@@ -231,7 +278,7 @@ def _calculate_box_position(
     frame_shape: Tuple
 ) -> Tuple[int, int]:
     """
-    Calculate position for info box relative to face.
+    Calculate position for info box relative to face with smart overlap prevention.
     
     Args:
         face_location: Face bounding box (top, right, bottom, left)
@@ -248,22 +295,35 @@ def _calculate_box_position(
     
     margin = config.INFO_BOX_MARGIN
     
-    if position == "right":
-        x = right + margin
-        y = top
-        # Ensure box fits in frame
-        if x + box_width > frame_width:
-            x = left - box_width - margin  # Try left instead
-        if x < 0:
-            x = margin
-    
-    elif position == "left":
+    if position == "left":
+        # Try left side first (for description)
         x = left - box_width - margin
         y = top
+        
+        # If doesn't fit on left, try far left (away from face)
         if x < 0:
-            x = right + margin  # Try right instead
+            x = margin
+            # If still overlaps with face, push to right side instead
+            if x + box_width > left - margin:
+                x = right + margin
+                # If right side also doesn't fit, use far right
+                if x + box_width > frame_width:
+                    x = frame_width - box_width - margin
+    
+    elif position == "right":
+        # Try right side first (for images)
+        x = right + margin
+        y = top
+        
+        # If doesn't fit on right, try far right
         if x + box_width > frame_width:
             x = frame_width - box_width - margin
+            # If still overlaps with face, push to left side instead
+            if x < right + margin:
+                x = left - box_width - margin
+                # If left side also doesn't fit, use far left
+                if x < 0:
+                    x = margin
     
     elif position == "top":
         x = left
@@ -278,9 +338,11 @@ def _calculate_box_position(
             y = top - box_height - margin  # Try top instead
     
     else:
-        # Default to right
-        x = right + margin
+        # Default to left for description
+        x = left - box_width - margin
         y = top
+        if x < 0:
+            x = margin
     
     # Final bounds checking
     x = max(0, min(x, frame_width - box_width))

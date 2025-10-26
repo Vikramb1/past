@@ -85,13 +85,13 @@ PERSON_INFO_MAX_POLL_TIME = 300  # Stop polling after 5 minutes
 INFO_BOX_BG_COLOR = (40, 40, 40)  # Dark gray background (BGR)
 INFO_BOX_BORDER_COLOR = (100, 200, 255)  # Light blue border (BGR)
 INFO_BOX_BORDER_THICKNESS = 1
-INFO_BOX_ALPHA = 0.85  # Background transparency (0.0-1.0, higher = more opaque)
+INFO_BOX_ALPHA = 0.7  # Background transparency (0.0-1.0, higher = more opaque)
 INFO_BOX_PADDING_LEFT = 6
 INFO_BOX_PADDING_RIGHT = 6
 INFO_BOX_PADDING_TOP = 6
 INFO_BOX_PADDING_BOTTOM = 6
 INFO_BOX_MARGIN = 5  # Space between face box and info box
-INFO_BOX_MAX_WIDTH = 350  # Maximum width of info box in pixels
+INFO_BOX_MAX_WIDTH = 180  # Maximum width of info box in pixels
 
 # Info text settings
 INFO_TEXT_COLOR = (255, 255, 255)  # White text (BGR)
