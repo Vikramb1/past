@@ -12,6 +12,7 @@ import {
     requestXRPLFromFaucet,
     giftXRPL
 } from './xrplService';
+import { sendSuiEnhanced, sendXrpEnhanced, isEmail } from './enhancedTransfers';
 
 // Configuration for testnet
 const NETWORK = "testnet";
@@ -227,10 +228,10 @@ app.get('/generate-keypair', async (req: Request, res: Response) => {
     }
 });
 
-// Send SUI using a private key
+// Send SUI using a private key (supports both wallet addresses and email addresses)
 app.post('/send-sui', async (req: Request, res: Response) => {
     try {
-        const { privateKey, recipientAddress, amount } = req.body;
+        const { privateKey, recipientAddress, recipientEmail, amount, senderName } = req.body;
 
         if (!privateKey) {
             return res.status(400).json({
@@ -239,9 +240,12 @@ app.post('/send-sui', async (req: Request, res: Response) => {
             });
         }
 
-        if (!recipientAddress) {
+        // Accept either recipientAddress or recipientEmail
+        const recipient = recipientAddress || recipientEmail;
+        if (!recipient) {
             return res.status(400).json({
-                error: 'Recipient address is required'
+                error: 'Recipient is required',
+                message: 'Please provide either a recipient address or email'
             });
         }
 
@@ -269,9 +273,17 @@ app.post('/send-sui', async (req: Request, res: Response) => {
         }
 
         const finalAmount = amount || AMOUNT_TO_SEND;
-        const sendResult = await sendSui(keypair, recipientAddress, finalAmount);
 
-        res.json(sendResult);
+        // Check if recipient is an email
+        if (isEmail(recipient)) {
+            console.log(`📧 Processing email-based SUI transfer to ${recipient}`);
+            const sendResult = await sendSuiEnhanced(keypair, recipient, finalAmount, senderName);
+            res.json(sendResult);
+        } else {
+            // Regular wallet address transfer
+            const sendResult = await sendSui(keypair, recipient, finalAmount);
+            res.json(sendResult);
+        }
     } catch (error: any) {
         console.error('Error sending SUI:', error);
         res.status(500).json({
@@ -600,10 +612,10 @@ app.get('/xrpl/generate-keypair', async (req: Request, res: Response) => {
     }
 });
 
-// Send XRP on XRPL EVM Sidechain
+// Send XRP on XRPL EVM Sidechain (supports both wallet addresses and email addresses)
 app.post('/xrpl/send', async (req: Request, res: Response) => {
     try {
-        const { privateKey, recipientAddress, amount } = req.body;
+        const { privateKey, recipientAddress, recipientEmail, amount, senderName } = req.body;
 
         if (!privateKey) {
             return res.status(400).json({
@@ -612,16 +624,27 @@ app.post('/xrpl/send', async (req: Request, res: Response) => {
             });
         }
 
-        if (!recipientAddress) {
+        // Accept either recipientAddress or recipientEmail
+        const recipient = recipientAddress || recipientEmail;
+        if (!recipient) {
             return res.status(400).json({
-                error: 'Recipient address is required'
+                error: 'Recipient is required',
+                message: 'Please provide either a recipient address or email'
             });
         }
 
         const finalAmount = amount || '0.0001'; // Default 0.0001 XRP
-        const result = await sendXRPL(privateKey, recipientAddress, finalAmount);
 
-        res.json(result);
+        // Check if recipient is an email
+        if (isEmail(recipient)) {
+            console.log(`📧 Processing email-based XRP transfer to ${recipient}`);
+            const result = await sendXrpEnhanced(privateKey, recipient, finalAmount, senderName);
+            res.json(result);
+        } else {
+            // Regular wallet address transfer
+            const result = await sendXRPL(privateKey, recipient, finalAmount);
+            res.json(result);
+        }
     } catch (error: any) {
         console.error('Error sending XRP:', error);
         res.status(500).json({
@@ -773,8 +796,10 @@ app.get('/', (req: Request, res: Response) => {
                     endpoint: "/send-sui",
                     body: {
                         privateKey: "0x... or base64 or suiprivkey...",
-                        recipientAddress: "0x...",
-                        amount: 1000000
+                        recipientAddress: "0x... (or use recipientEmail instead)",
+                        recipientEmail: "recipient@email.com (optional - use instead of address)",
+                        amount: 1000000,
+                        senderName: "Your Name (optional)"
                     }
                 },
                 giftCrypto: {
@@ -794,8 +819,10 @@ app.get('/', (req: Request, res: Response) => {
                     endpoint: "/xrpl/send",
                     body: {
                         privateKey: "0x...",
-                        recipientAddress: "0x...",
-                        amount: "0.0001"
+                        recipientAddress: "0x... (or use recipientEmail instead)",
+                        recipientEmail: "recipient@email.com (optional - use instead of address)",
+                        amount: "0.0001",
+                        senderName: "Your Name (optional)"
                     }
                 },
                 giftXRP: {
@@ -849,3 +876,6 @@ app.listen(PORT, () => {
         }
     });
 });
+
+// Export sendSui for use in other modules
+export { sendSui };

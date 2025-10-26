@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cal Hacks - Claim Your Crypto Wallet</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .wallet-info {
+            background: #f7f9fc;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .credentials {
+            margin-top: 30px;
+        }
+
+        .credential-box {
+            background: #fff;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .credential-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+
+        .credential-value {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            word-break: break-all;
+            color: #333;
+            background: #f7f9fc;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .copy-btn:hover {
+            background: #5a67d8;
+        }
+
+        .copy-btn.copied {
+            background: #48bb78;
+        }
+
+        .warning {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .warning h3 {
+            color: #c53030;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .warning p {
+            color: #742a2a;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+
+        .error {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .error h2 {
+            color: #c53030;
+            margin-bottom: 10px;
+        }
+
+        .error p {
+            color: #742a2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>🚀 Cal Hacks</h1>
+            <p>Claim Your Crypto Wallet</p>
+        </div>
+
+        <div id="content">
+            <div class="loading">Loading wallet information...</div>
+        </div>
+    </div>
+
+    <script>
+        function copyToClipboard(text, button) {
+            navigator.clipboard.writeText(text).then(() => {
+                button.textContent = '✓ Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                    button.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function decodeWalletData() {
+            try {
+                // Get the encoded data from URL
+                const path = window.location.pathname;
+                const encoded = path.split('/claim/')[1];
+
+                if (!encoded) {
+                    throw new Error('No wallet data found in URL');
+                }
+
+                // Decode base64 URL-safe string
+                let base64 = encoded
+                    .replace(/-/g, '+')
+                    .replace(/_/g, '/');
+
+                // Add padding if needed
+                while (base64.length % 4) {
+                    base64 += '=';
+                }
+
+                const decoded = atob(base64);
+                const walletData = JSON.parse(decoded);
+
+                return walletData;
+            } catch (error) {
+                console.error('Error decoding wallet data:', error);
+                return null;
+            }
+        }
+
+        function displayWallet(data) {
+            const content = document.getElementById('content');
+
+            if (!data) {
+                content.innerHTML = `
+                    <div class="error">
+                        <h2>⚠️ Invalid Link</h2>
+                        <p>This wallet link appears to be invalid or corrupted.</p>
+                        <p>Please check the link and try again.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            content.innerHTML = `
+                <div class="wallet-info">
+                    <div class="info-row">
+                        <span class="label">Cryptocurrency:</span>
+                        <span class="value">${data.type}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Recipient:</span>
+                        <span class="value">${data.recipient}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Amount:</span>
+                        <span class="value">${data.amount} ${data.type}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Created:</span>
+                        <span class="value">${new Date(data.timestamp).toLocaleString()}</span>
+                    </div>
+                </div>
+
+                <div class="credentials">
+                    <div class="credential-box">
+                        <div class="credential-label">Wallet Access Key</div>
+                        <div class="credential-value" id="privateKey">${data.privateKey}</div>
+                        <button class="copy-btn" onclick="copyToClipboard('${data.privateKey}', this)">Copy</button>
+                    </div>
+
+                    <div class="credential-box">
+                        <div class="credential-label">Wallet Identifier</div>
+                        <div class="credential-value" id="publicKey">${data.publicKey}</div>
+                        <button class="copy-btn" onclick="copyToClipboard('${data.publicKey}', this)">Copy</button>
+                    </div>
+                </div>
+
+                <div class="warning">
+                    <h3>⚠️ Important Security Notice</h3>
+                    <p>
+                        • Save these credentials in a secure location<br>
+                        • Never share your wallet access key with anyone<br>
+                        • This link will only work once for security<br>
+                        • Make sure to save your credentials before closing this page
+                    </p>
+                </div>
+            `;
+        }
+
+        // Load wallet data when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            const walletData = decodeWalletData();
+            displayWallet(walletData);
+        });
+    </script>
+</body>
+</html>
